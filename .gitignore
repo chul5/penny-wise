@@ -1,0 +1,5 @@
+__pycache__/
+*.py[cod]
+data/*.jsonl
+data/*.csv
+.DS_Store
