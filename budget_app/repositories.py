@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 from .errors import DataFileError, ValidationError
-from .models import Transaction
+from .models import Category, Transaction, format_id, parse_id
 
 CHUNK_SIZE = 64 * 1024
 
@@ -164,6 +164,19 @@ def write_jsonl(path: Path, records: Iterable[dict[str, Any]]) -> int:
             tmp.unlink(missing_ok=True)
 
 
+def load_models(raws: Iterable[dict[str, Any]], loader: Any, path: Path) -> Iterator[Any]:
+    """dict 스트림을 모델 스트림으로 바꾼다. 필드가 빠진 건은 건너뛴다.
+
+    반환 타입이 느슨한 대신, 호출하는 메서드 쪽에서 Iterator[Category]처럼
+    정확한 타입을 선언한다. 사용하는 쪽 계약이 정확하면 그걸로 충분하다.
+    """
+    for raw in raws:
+        try:
+            yield loader(raw)
+        except ValidationError as exc:
+            warn(f"{path.name}: {exc.message} - 건너뜁니다")
+
+
 class TransactionRepository:
     """transactions.jsonl 담당."""
 
@@ -172,11 +185,27 @@ class TransactionRepository:
 
     def stream(self) -> Iterator[Transaction]:
         """저장된 거래를 파일에 기록된 순서대로 흘려보낸다."""
-        return self._to_transactions(read_jsonl(self.path))
+        return load_models(read_jsonl(self.path), Transaction.from_dict, self.path)
 
     def stream_reversed(self) -> Iterator[Transaction]:
         """저장된 거래를 기록의 역순(= 최근 입력순)으로 흘려보낸다."""
-        return self._to_transactions(read_jsonl_reversed(self.path))
+        return load_models(read_jsonl_reversed(self.path), Transaction.from_dict, self.path)
+
+    def next_id(self) -> str:
+        """다음에 쓸 거래 id를 만든다.
+
+        항상 append하므로 파일 맨 뒤 레코드가 가장 큰 번호를 갖는다. 덕분에
+        전체를 훑지 않고 뒤에서 한 건만 읽으면 된다.
+
+        주의: 가장 최근 거래를 지우면 그 번호가 다시 쓰인다. 남아 있는
+        거래끼리는 여전히 유일하므로 그대로 둔다. 번호를 절대 재사용하지
+        않으려면 카운터를 따로 저장해야 하는데, 그 복잡도를 살 만한 이득이 없다.
+        """
+        for transaction in self.stream_reversed():
+            seq = parse_id(transaction.id)
+            if seq is not None:
+                return format_id(seq + 1)
+        return format_id(1)
 
     def append(self, transaction: Transaction) -> None:
         """거래 한 건을 파일 끝에 저장한다."""
@@ -191,10 +220,30 @@ class TransactionRepository:
         """
         return write_jsonl(self.path, (t.to_dict() for t in transactions))
 
-    def _to_transactions(self, raws: Iterable[dict[str, Any]]) -> Iterator[Transaction]:
-        """dict 스트림을 Transaction 스트림으로 바꾼다. 깨진 건은 건너뛴다."""
-        for raw in raws:
-            try:
-                yield Transaction.from_dict(raw)
-            except ValidationError as exc:
-                warn(f"{self.path.name}: {exc.message} - 건너뜁니다")
+
+class CategoryStore:
+    """categories.jsonl 담당.
+
+    거래와 달리 카테고리는 수가 적고 add 할 때마다 중복 확인이 필요해서
+    names()로 한 번에 읽는 쪽이 자연스럽다. 스트리밍이 목적이 아니라
+    "등록된 목록"이 목적인 데이터다.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def stream(self) -> Iterator[Category]:
+        """저장된 카테고리를 등록 순서대로 흘려보낸다."""
+        return load_models(read_jsonl(self.path), Category.from_dict, self.path)
+
+    def names(self) -> list[str]:
+        """등록된 카테고리 이름 목록. 중복은 등록 순서를 지키며 제거한다."""
+        return list(dict.fromkeys(category.name for category in self.stream()))
+
+    def append(self, name: str) -> None:
+        """카테고리 하나를 파일 끝에 저장한다. 중복 검사는 서비스 계층 몫이다."""
+        append_jsonl(self.path, Category(name).to_dict())
+
+    def replace_all(self, names: Iterable[str]) -> int:
+        """카테고리 목록을 통째로 교체한다. 반환값은 저장된 건수."""
+        return write_jsonl(self.path, (Category(name).to_dict() for name in names))
