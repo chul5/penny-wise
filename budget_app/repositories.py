@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 from .errors import DataFileError, ValidationError
-from .models import Category, Transaction, format_id, parse_id
+from .models import Budget, Category, Transaction, format_id, parse_id
 
 CHUNK_SIZE = 64 * 1024
 
@@ -247,3 +247,39 @@ class CategoryStore:
     def replace_all(self, names: Iterable[str]) -> int:
         """카테고리 목록을 통째로 교체한다. 반환값은 저장된 건수."""
         return write_jsonl(self.path, (Category(name).to_dict() for name in names))
+
+
+class BudgetStore:
+    """budgets.jsonl 담당. 한 달에 한 줄이다."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def stream(self) -> Iterator[Budget]:
+        """저장된 월 예산을 월 순서대로 흘려보낸다."""
+        return load_models(read_jsonl(self.path), Budget.from_dict, self.path)
+
+    def get(self, month: str) -> Budget | None:
+        """해당 월 예산. 설정된 적이 없으면 None.
+
+        summary가 "예산이 있으면 사용률을 보여준다"로 동작하므로,
+        없는 상태를 예외가 아니라 None으로 표현한다.
+        """
+        for budget in self.stream():
+            if budget.month == month:
+                return budget
+        return None
+
+    def set(self, month: str, amount: int) -> None:
+        """해당 월 예산을 저장한다. 이미 있으면 교체한다.
+
+        append하면 같은 달이 두 줄로 남아 어느 쪽이 맞는지 알 수 없게 된다.
+        그래서 전체를 다시 쓴다. 월 예산은 한 달에 한 줄뿐이라 다시 쓰는
+        비용이 문제되지 않는다. 파일은 월 순으로 정렬해 둔다.
+        """
+        others = [b for b in self.stream() if b.month != month]
+        self.replace_all(sorted(others + [Budget(month, amount)], key=lambda b: b.month))
+
+    def replace_all(self, budgets: Iterable[Budget]) -> int:
+        """예산 목록을 통째로 교체한다. 반환값은 저장된 건수."""
+        return write_jsonl(self.path, (budget.to_dict() for budget in budgets))
