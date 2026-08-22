@@ -53,6 +53,25 @@ def read_jsonl(path: Path) -> Iterator[dict[str, Any]]:
         raise DataFileError(f"저장 파일을 읽을 수 없습니다: {path}") from exc
 
 
+def append_jsonl(path: Path, record: dict[str, Any]) -> None:
+    """레코드 한 줄을 파일 끝에 덧붙인다.
+
+    JSONL이 append에 강한 게 이 포맷을 고른 이유다. 기존 내용을 다시 쓰지
+    않으므로 파일이 커져도 추가 비용이 일정하고, 쓰다 죽어도 앞부분은 온전하다.
+    """
+    ensure_file(path)
+    try:
+        # 마지막 줄에 개행이 없으면(손으로 편집한 경우) 두 레코드가 한 줄로
+        # 붙어버린다. 그러면 두 건이 모두 깨지므로 개행을 먼저 보충한다.
+        needs_newline = path.stat().st_size > 0 and path.read_bytes()[-1:] != b"\n"
+        with path.open("a", encoding="utf-8") as fp:
+            if needs_newline:
+                fp.write("\n")
+            fp.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        raise DataFileError(f"저장 파일에 쓸 수 없습니다: {path}") from exc
+
+
 class TransactionRepository:
     """transactions.jsonl 담당."""
 
@@ -66,3 +85,7 @@ class TransactionRepository:
                 yield Transaction.from_dict(raw)
             except ValidationError as exc:
                 warn(f"{self.path.name}: {exc.message} - 건너뜁니다")
+
+    def append(self, transaction: Transaction) -> None:
+        """거래 한 건을 파일 끝에 저장한다."""
+        append_jsonl(self.path, transaction.to_dict())
