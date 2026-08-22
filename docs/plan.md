@@ -7,10 +7,9 @@
 ## 0. 선행 조건 / 확정 결정 사항
 
 ### 환경
-- 미션 요구: **Python 3.10 이상**. 현재 머신의 `python3`는 **3.9.6** 뿐이므로 먼저 3.10+ 설치 필요.
-  - 예: `brew install python@3.12` → 이후 모든 실행은 `python3.12 -m budget_app ...`
-  - **코드는 3.9에서도 실행되도록 작성**한다(`from __future__ import annotations` + `dataclass(slots=True)` 미사용).
-    각 단계를 현재 머신에서 바로 스모크 테스트할 수 있어야 하기 때문. 문서상 지원 버전은 3.10+로 표기.
+- 미션 요구: **Python 3.10 이상**. 이 머신에는 Homebrew **Python 3.12.14**가 설치되어 있다(`/opt/homebrew/bin/python3.12`).
+  - 기본 `python3`는 시스템 3.9.6이므로, 실행/검증은 **반드시** `python3.12 -m budget_app ...` 로 한다.
+  - 3.10+ 문법을 그대로 사용한다(`X | None`, `dataclass(slots=True)`).
 - 표준 라이브러리만 사용 (`argparse`, `dataclasses`, `json`, `csv`, `datetime`, `pathlib`, `os`, `tempfile`, `functools`, `logging`, `typing`, `collections`, `itertools`, `unittest`).
 
 ### 미션이 "택 1 후 문서에 고정"하라고 한 항목 → 아래로 확정
@@ -63,7 +62,7 @@ penny-wise/
 ## 2. 데이터 모델 (`models.py`)
 
 ```python
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Transaction:
     id: str                      # "TX-000012"
     date: str                    # "YYYY-MM-DD" (문자열 정렬 == 시간순이라 그대로 씀)
@@ -80,11 +79,11 @@ class Transaction:
     def month(self) -> str:      # "2024-01"
         return self.date[:7]
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Category:
     name: str
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Budget:
     month: str                   # "YYYY-MM"
     amount: int
@@ -274,5 +273,5 @@ backup                                       # 보너스 1
 1. **"스트리밍" + "최신순"** — 3.2절의 트레이드오프를 README에 반드시 설명. 채점 포인트 중 하나(과제 목표 3번).
 2. **원자적 교체는 같은 파일시스템에서만 원자적** — 임시 파일을 반드시 `data-dir` 안에 생성.
 3. **CSV의 tags 필드** — 쉼표 구분 문자열이 CSV 구분자와 충돌. `csv` 모듈이 자동 인용 처리하므로 직접 문자열 조립 금지.
-4. **Python 3.9 환경** — 제출/문서 기준은 3.10+지만, 개발 중 검증을 위해 3.9 호환 문법을 유지한다(0절 참고).
+4. **인터프리터 혼동** — `python3`(3.9.6)로 실행하면 `slots=True`에서 즉시 실패한다. 항상 `python3.12`를 쓴다.
 5. **금액은 int(원 단위)** 로 고정 — float 누적 오차 회피. import 시 `"15000.0"` 같은 입력은 소수부 0일 때만 허용.
