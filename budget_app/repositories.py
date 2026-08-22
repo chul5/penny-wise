@@ -7,9 +7,11 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterable, Iterator
 
 from .errors import DataFileError, ValidationError
 from .models import Transaction
@@ -72,6 +74,41 @@ def append_jsonl(path: Path, record: dict[str, Any]) -> None:
         raise DataFileError(f"저장 파일에 쓸 수 없습니다: {path}") from exc
 
 
+def write_jsonl(path: Path, records: Iterable[dict[str, Any]]) -> int:
+    """전체를 임시 파일에 쓰고 원자적으로 교체한다. 반환값은 쓴 건수.
+
+    파일 기반 저장에는 롤백해 줄 DB 엔진이 없다. 원본을 직접 고치다가
+    중간에 죽으면 파일이 반쯤 망가진 상태로 남는다. 그래서 새 파일을 완성한
+    뒤 os.replace로 한 번에 갈아끼운다 - 성공하면 새 파일, 실패하면 원본
+    그대로이고 중간 상태가 없다.
+
+    임시 파일은 반드시 같은 폴더에 만든다. os.replace의 원자성은 같은
+    파일시스템 안에서만 보장된다.
+    """
+    ensure_file(path)
+    tmp: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w", dir=path.parent, prefix=path.name, suffix=".tmp",
+            delete=False, encoding="utf-8",
+        ) as fp:
+            tmp = Path(fp.name)
+            count = 0
+            for record in records:
+                fp.write(json.dumps(record, ensure_ascii=False) + "\n")
+                count += 1
+            fp.flush()
+            os.fsync(fp.fileno())  # 디스크에 내려간 뒤 교체해야 의미가 있다
+        os.replace(tmp, path)
+        return count
+    except OSError as exc:
+        raise DataFileError(f"저장 파일을 다시 쓸 수 없습니다: {path}") from exc
+    finally:
+        # 교체가 성공했으면 tmp는 이미 사라졌다. 실패했을 때만 남아서 지워진다.
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
+
+
 class TransactionRepository:
     """transactions.jsonl 담당."""
 
@@ -89,3 +126,12 @@ class TransactionRepository:
     def append(self, transaction: Transaction) -> None:
         """거래 한 건을 파일 끝에 저장한다."""
         append_jsonl(self.path, transaction.to_dict())
+
+    def replace_all(self, transactions: Iterable[Transaction]) -> int:
+        """파일 내용을 주어진 거래들로 통째로 교체한다. 반환값은 저장된 건수.
+
+        update/delete/카테고리 치환이 모두 이 메서드를 재사용한다.
+        stream()으로 읽으면서 동시에 넘겨도 안전하다 - 쓰기는 임시 파일에
+        일어나고, 원본은 교체 직전까지 손대지 않는다.
+        """
+        return write_jsonl(self.path, (t.to_dict() for t in transactions))
