@@ -13,16 +13,41 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import Sequence
+from typing import Callable, Sequence, TypeVar
 
 from . import __version__
-from .errors import BudgetAppError
+from .errors import BudgetAppError, ValidationError
 
 DEFAULT_DATA_DIR = "./data"
 DEFAULT_LIST_LIMIT = 20
 DEFAULT_TOP_N = 3
 
 PROG = "python -m budget_app"
+
+T = TypeVar("T")
+
+
+def prompt(label: str, parse: Callable[[str], T]) -> T:
+    """올바른 값이 들어올 때까지 되묻는다.
+
+    검증은 validators의 순수 함수가 하고, 여기서는 물어보고 오류를 보여주는
+    일만 한다. 그래서 같은 검증 함수를 옵션 방식이나 CSV import에서도 쓴다.
+
+    TypeVar 덕분에 prompt("금액", parse_amount)의 결과가 int로,
+    prompt("태그", parse_tags)의 결과가 tuple[str, ...]로 좁혀진다.
+    """
+    while True:
+        try:
+            return parse(input(f"{label}: "))
+        except ValidationError as exc:
+            print(f"[오류] {exc.message}", file=sys.stderr)
+            if exc.hint:
+                print(f"[힌트] {exc.hint}", file=sys.stderr)
+        except EOFError:
+            # Ctrl+D 로 입력이 끊긴 경우. 스택트레이스 대신 안내로 끝낸다.
+            raise BudgetAppError(
+                "입력이 중단되었습니다.", hint="다시 실행해 주세요."
+            ) from None
 
 
 def build_parser() -> argparse.ArgumentParser:
