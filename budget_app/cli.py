@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import argparse
 import sys
+import traceback
 from typing import Callable, Sequence, TypeVar
 
 from . import __version__
+from .decorators import print_error, report_error
 from .errors import BudgetAppError, ValidationError
 from .repositories import Stores, open_stores
 
@@ -41,9 +43,7 @@ def prompt(label: str, parse: Callable[[str], T]) -> T:
         try:
             return parse(input(f"{label}: "))
         except ValidationError as exc:
-            print(f"[오류] {exc.message}", file=sys.stderr)
-            if exc.hint:
-                print(f"[힌트] {exc.hint}", file=sys.stderr)
+            print_error(exc)
         except EOFError:
             # Ctrl+D 로 입력이 끊긴 경우. 스택트레이스 대신 안내로 끝낸다.
             raise BudgetAppError(
@@ -189,10 +189,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         return dispatch(args)
     except BudgetAppError as exc:
-        print(f"[오류] {exc.message}", file=sys.stderr)
-        if exc.hint:
-            print(f"[힌트] {exc.hint}", file=sys.stderr)
-        return exc.exit_code
+        # 핸들러 안에서 난 오류는 @handle_errors가 이미 처리한다.
+        # 여기 오는 건 디스패치 도중(예: 없는 명령) 난 오류뿐이다.
+        return report_error(exc)
     except KeyboardInterrupt:
         print("\n[중단] 사용자가 실행을 취소했습니다.", file=sys.stderr)
         return 130
+    except Exception as exc:
+        # 예상하지 못한 오류(우리 쪽 버그)도 스택트레이스를 노출하지 않는다.
+        # 대신 --verbose 를 주면 개발자가 원인을 볼 수 있게 남긴다.
+        code = report_error(
+            BudgetAppError(
+                f"예상하지 못한 오류가 발생했습니다: {exc}",
+                hint="--verbose 로 다시 실행하면 자세한 내용을 볼 수 있습니다.",
+            )
+        )
+        if args.verbose:
+            traceback.print_exc()
+        return code
