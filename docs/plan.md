@@ -40,11 +40,11 @@ penny-wise/
 ├── budget_app/
 │   ├── __init__.py
 │   ├── __main__.py           # 엔트리포인트: python -m budget_app
-│   ├── cli.py                # argparse 서브커맨드 정의 + 대화형 입력 + 종료 코드
+│   ├── cli.py                # argparse 서브커맨드 정의 + 대화형 입력(prompt) + 종료 코드
 │   ├── services.py           # 유스케이스 조합(TransactionService/BudgetService/CategoryService/PortService)
 │   ├── repositories.py       # 파일 I/O + 제너레이터 스트리밍 + 원자적 교체
 │   ├── models.py             # dataclass: Transaction / Category / Budget
-│   ├── validators.py         # 날짜/금액/타입/카테고리 검증 + 대화형 재입력 루프
+│   ├── validators.py         # 날짜/금액/타입 검증 (순수 함수, input() 없음)
 │   ├── decorators.py         # @handle_errors / @log_call / @timed
 │   ├── formatters.py         # 테이블 정렬 출력 (보너스 3)
 │   └── errors.py             # 도메인 예외 계층
@@ -56,6 +56,10 @@ penny-wise/
 
 **의존 방향은 한 방향으로만**: `cli → services → repositories → models`.
 `repositories`는 `services`를 모르고, `models`는 아무것도 모른다. (테스트 용이성 확보)
+
+> 대화형 재입력 루프(`prompt`)는 애초에 `validators.py`에 두려 했으나 `cli.py`로 옮겼다.
+> `validators.py`가 "`input()`을 부르지 않는다"는 계약을 지켜야 옵션 방식 `update`와
+> CSV `import`가 같은 검증 함수를 재사용할 수 있다. 묻고 보여주는 일은 표현 계층 몫이다.
 
 ---
 
@@ -104,7 +108,11 @@ class Budget:
 ```
 
 ### id 생성 규칙
-`TX-` + 6자리 zero-pad. 마지막 줄 기준 최대 seq를 스트리밍으로 한 번 훑어 구함(파일 전체 로드 없음). 동일 파일에 대해 append 직전에 계산.
+`TX-` + 6자리 zero-pad. 항상 append하므로 **파일 맨 뒤 레코드가 가장 큰 번호**를 갖는다.
+`stream_reversed()`로 뒤에서 한 건만 읽어 +1 한다(10,000건 파일에서 6.8%만 읽음).
+
+주의: 가장 최근 거래를 삭제하면 그 번호가 재사용된다. 남아 있는 거래끼리는 여전히 유일하므로
+그대로 둔다. 완전한 단조 증가를 원하면 카운터를 따로 저장해야 하는데 그 복잡도를 살 이득이 없다.
 
 ---
 
@@ -152,11 +160,31 @@ def rewrite(self, transform: Callable[[Iterator[T]], Iterator[T]]) -> int:
 - 실패 시 원본은 손상되지 않고 임시 파일만 남음 → `finally`에서 정리.
 - `delete`/`update`/`category remove`(대체 카테고리 적용)가 모두 이 한 메서드를 재사용.
 
-### 3.4 클래스 구성
-- `JsonlRepository[T]` (제네릭 베이스: `stream` / `stream_reversed` / `append` / `rewrite` / `ensure_file`)
-- `TransactionRepository(JsonlRepository[Transaction])` — `next_id()`, 필터 제너레이터
-- `CategoryStore(JsonlRepository[Category])` — `names() -> set[str]`, 기본 카테고리 시딩
-- `BudgetStore(JsonlRepository[Budget])` — `get(month)`, `upsert(month, amount)`
+### 3.4 구성 (실제 구현)
+
+처음에는 `JsonlRepository[T]` 제네릭 베이스에 loader를 주입하는 구조로 만들었는데, 파일 3개를
+읽으려고 `Generic`/`TypeVar`/`Callable`을 동원하는 게 과해서 걷어냈다. **파일 기계적 처리는 함수,
+타입은 얇은 클래스**로 나눈 결과가 더 짧고(79줄 → 52줄) 타입도 더 정확하다.
+
+모듈 함수 (파일 다루는 코드는 한 번만 작성):
+- `ensure_file(path)` — 상위 폴더까지 생성
+- `read_jsonl(path)` — 앞에서부터 스트리밍
+- `read_jsonl_reversed(path, chunk_size)` — 뒤에서부터 청크 단위 스트리밍
+- `append_jsonl(path, record)` — 끝에 한 줄 추가 (개행 누락 보충)
+- `write_jsonl(path, records)` — 임시 파일 + `os.replace` 원자적 교체
+- `parse_line(...)` / `load_models(...)` — 깨진 줄 경고 후 건너뛰기 (양쪽 리더가 공유)
+- `warn(message)` — stderr 출력. `logging` 설정이 필요 없어 3줄로 끝냈다
+
+클래스 (정확한 타입 계약만 담당):
+- `TransactionRepository` — `stream()` / `stream_reversed()` / `append()` / `replace_all()` / `next_id()`
+- `CategoryStore` — `stream()` / `names() -> list[str]` / `append()` / `replace_all()`
+- `BudgetStore` — `stream()` / `get(month) -> Budget | None` / `set(month, amount)` / `replace_all()`
+
+`CategoryStore.names()`는 스트리밍하지 않고 리스트를 준다. 카테고리는 수가 적고 중복 확인과
+전체 목록 출력이 목적이라 스트리밍할 이유가 없다. `dict.fromkeys()`로 등록 순서를 지키며 중복 제거.
+
+`BudgetStore.set()`은 append가 아니라 전체 재작성이다. 같은 달이 두 줄로 남으면 어느 쪽이
+맞는지 알 수 없다. 한 달에 한 줄뿐이라 다시 쓰는 비용이 없고, 월 순 정렬도 함께 얻는다.
 
 ---
 
@@ -244,21 +272,68 @@ backup                                       # 보너스 1
 
 ---
 
-## 9. 구현 순서 (커밋 단위)
+## 9. 구현 순서
 
-| # | 작업 | 산출물 | 검증 |
+작업 단위는 **한 파일 안의 논리 단위 하나**(대략 40~80줄, 검증 명령 1~2개)로 잡고,
+매 단위마다 리뷰와 커밋을 받는다. 여러 파일을 한 번에 내면 검증할 게 너무 많아진다.
+
+### 순서를 바꾼 이유
+
+원래 계획은 "데코레이터 + 검증기"를 3단계에 두고 명령 구현을 그 뒤로 미뤘다. 그런데
+`@handle_errors`는 **각 명령 핸들러를 감싸는** 장치다. 핸들러를 먼저 11개 만들면 나중에
+전부 되돌아가 손봐야 한다. 그래서 데코레이터를 명령 구현보다 **앞으로** 당긴다.
+
+`category`를 첫 명령으로 두는 이유는 `add`가 등록된 카테고리 목록을 검증해야 하므로
+`category`가 선행 조건이고, 둘 중 더 작기 때문이다.
+
+### 완료 (Done)
+
+| # | 작업 | 산출물 |
+| --- | --- | --- |
+| 1 | 패키지 뼈대 + 예외 계층 + 데이터 모델 | `errors.py`, `models.py`, `cli.py` 파서 골격 |
+| 2 | JSONL 스트리밍 읽기 | `read_jsonl`, `TransactionRepository.stream` |
+| 3 | 손상된 줄 건너뛰기 + 경고 | `parse_line`, `warn` |
+| 4 | append 저장 | `append_jsonl`, `.append()` |
+| 5 | 원자적 전체 재작성 | `write_jsonl`, `.replace_all()` |
+| 6 | 역방향 청크 읽기 (최신순) | `read_jsonl_reversed`, `.stream_reversed()` |
+| 7 | 다음 id 할당 | `.next_id()` |
+| 8 | 카테고리 저장소 | `CategoryStore` |
+| 9 | 예산 저장소 (월별 upsert) | `BudgetStore` |
+| 10 | 순수 입력 검증 함수 | `validators.py` |
+| 11 | 대화형 재입력 루프 | `cli.prompt` |
+
+여기까지로 **저장소 계층과 검증 계층이 완성**됐다. 미션 요구 중 스트리밍(5·7번),
+원자성(6번), dataclass 모델(2번), 3파일 분리(3번), 모듈화(14번)가 충족된다.
+
+### 남은 작업 (To do)
+
+| # | 작업 | 왜 이 순서인가 | 검증 |
 | --- | --- | --- | --- |
-| 1 | 뼈대 + 모델 | `models.py`, `errors.py`, 패키지 스캐폴딩 | `python -m budget_app --help` 동작 |
-| 2 | 저장소 (스트리밍/append/원자적 rewrite) | `repositories.py` | `tests/test_repositories.py`: 손상 줄 skip, `rewrite` 원자성, `stream_reversed` |
-| 3 | 데코레이터 + 검증기 | `decorators.py`, `validators.py` | 잘못된 날짜/금액에서 스택트레이스 없이 종료코드 1 |
-| 4 | category (add/list/remove) + 기본 시딩 | `services.py` 일부, CLI | 사용 중 카테고리 삭제 차단 / `--replace-with` 치환 |
-| 5 | add + list (`--limit`, 스트리밍) | | 미션 8절 예시와 동일한 출력 |
-| 6 | search (5개 조건 조합) | | 조건 교차 케이스 테스트 |
-| 7 | update / delete (rewrite 재사용) | | 없는 id → `[오류]` + exit 1 |
-| 8 | budget set/show + summary(예산 사용률/초과 경고) | | 데이터 없는 달 "데이터 없음", 초과 시 경고 |
-| 9 | import / export CSV | `formatters.py` 포함 | export → import 왕복(round-trip) 건수 일치 |
-| 10 | README.md | | 실행법/파일 위치/명령 예시/CSV 스키마 4항목 포함 |
-| 11 | 보너스: backup, 반복 내역, 테이블 정렬, (원자성은 2단계에 이미 포함) | | |
+| 12 | 디스패치 연결: `--data-dir` → 3개 저장소 묶기 | 모든 핸들러가 이 묶음을 받는다 | `--data-dir` 변경이 실제로 반영되는지 |
+| 13 | **`decorators.py`** — `@handle_errors` / `@log_call` / `@timed` | 핸들러를 감싸므로 핸들러보다 먼저 (미션 12번) | 오류 시 스택트레이스 없이 종료코드 1 |
+| 14 | `category add` / `list` + 기본 카테고리 시딩 | `add`의 선행 조건 | 빈 파일에서 기본 카테고리 생성 |
+| 15 | `category remove` (사용 중이면 차단 또는 `--replace-with`) | 거래 스캔이 필요해 분리 | 사용 중 삭제 차단, 치환 동작 |
+| 16 | `add` (대화형) | 카테고리 검증이 준비된 뒤 | 미션 8절 예시와 동일한 출력 |
+| 17 | `list --limit` | `stream_reversed` 재사용 | 최신순, 기본값 동작 |
+| 18 | `search` (기간/카테고리/타입/키워드/태그) | 필터 제너레이터 체인 | 조건 교차 케이스 |
+| 19 | `delete --id` | `replace_all` 재사용 | 없는 id → `[오류]` + exit 1 |
+| 20 | `update --id` (옵션 기반) | delete와 같은 경로 | 없는 id 처리, 필드별 재검증 |
+| 21 | `budget set` / `show` | summary의 선행 조건 | 같은 달 재설정 시 교체 |
+| 22 | `summary --month --top` + 예산 사용률/초과 경고 | 집계 + 예산 결합 | 데이터 없는 달 "데이터 없음" |
+| 23 | `export --out` (CSV) | | 조건 없이 실행하면 오류 |
+| 24 | `import --from` (CSV) | export가 만든 파일로 검증 | 왕복 건수 일치 |
+| 25 | `README.md` | | 실행법/파일 위치/명령 예시/CSV 스키마 |
+
+### 보너스 (선택)
+
+| # | 작업 |
+| --- | --- |
+| 26 | `formatters.py` 테이블 정렬 (한글 폭 보정 포함) |
+| 27 | `backup` 명령 |
+| 28 | 반복 내역 기능 |
+| 29 | `tests/` 단위 테스트 |
+
+원자성 강화(보너스 4)는 5단계에서 이미 완료됐다.
 
 ---
 
@@ -271,7 +346,15 @@ backup                                       # 보너스 1
 ## 11. 리스크 / 주의점
 
 1. **"스트리밍" + "최신순"** — 3.2절의 트레이드오프를 README에 반드시 설명. 채점 포인트 중 하나(과제 목표 3번).
+   `stream_reversed()`는 **기록 순서의 역순**이지 날짜 순이 아니다. 과거 날짜를 나중에 입력하면
+   목록 맨 위에 뜬다. 날짜순을 엄격히 원하면 `heapq.nlargest(limit, stream(), key=date)`가 필요하고
+   이때 메모리는 O(limit), 파일은 전량 읽는다. **`list`는 기록 역순으로 간다** (미션의 스트리밍 요구에 맞음).
 2. **원자적 교체는 같은 파일시스템에서만 원자적** — 임시 파일을 반드시 `data-dir` 안에 생성.
 3. **CSV의 tags 필드** — 쉼표 구분 문자열이 CSV 구분자와 충돌. `csv` 모듈이 자동 인용 처리하므로 직접 문자열 조립 금지.
-4. **인터프리터 혼동** — `python3`(3.9.6)로 실행하면 `slots=True`에서 즉시 실패한다. 항상 `python3.12`를 쓴다.
-5. **금액은 int(원 단위)** 로 고정 — float 누적 오차 회피. import 시 `"15000.0"` 같은 입력은 소수부 0일 때만 허용.
+4. **인터프리터** — 실행/검증은 `python3.12`로 한다. 현재 PATH에서는 `python3`도 3.12를 가리키지만,
+   `/usr/bin/python3`는 여전히 3.9.6이고 거기서는 `slots=True`가 즉시 실패한다.
+5. **금액은 int(원 단위)** 로 고정 — float 누적 오차 회피. `parse_amount`는 현재 소수 입력을 거부한다.
+   CSV import에서 `"15000.0"`을 받아야 하면 그때 소수부 0인 경우만 허용하도록 넓힌다(호출자가 생길 때).
+6. **데코레이터 누락 주의** — 미션 12번은 채점 요구사항이다. 13단계에서 반드시 만들고 실제로 적용한다.
+7. **최신 거래 삭제 시 id 재사용** — 2절 참고. 남은 거래끼리는 유일하지만, 과거 export CSV의 id가
+   다른 거래를 가리킬 수 있다. README에 명시한다.
