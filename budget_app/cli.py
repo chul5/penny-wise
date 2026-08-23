@@ -17,6 +17,7 @@ from typing import Callable, Sequence, TypeVar
 
 from . import __version__
 from .errors import BudgetAppError, ValidationError
+from .repositories import Stores, open_stores
 
 DEFAULT_DATA_DIR = "./data"
 DEFAULT_LIST_LIMIT = 20
@@ -160,15 +161,25 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def dispatch(args: argparse.Namespace) -> int:
-    """파싱된 인자를 실제 핸들러로 넘긴다. 반환값이 종료 코드다.
+Handler = Callable[[argparse.Namespace, Stores], int]
 
-    핸들러는 이후 단계에서 순차적으로 붙인다.
+# 명령 이름 -> 핸들러. 명령을 구현할 때마다 여기에 한 줄씩 등록한다.
+HANDLERS: dict[str, Handler] = {}
+
+
+def dispatch(args: argparse.Namespace) -> int:
+    """파싱된 인자를 핸들러로 넘긴다. 반환값이 그대로 종료 코드가 된다.
+
+    모든 핸들러가 (args, stores) 시그니처를 공유하므로 여기서 분기할 게 없다.
+    저장소는 --data-dir 로 그때그때 만들어 넘긴다.
     """
-    raise BudgetAppError(
-        f"'{args.command}' 명령은 아직 구현되지 않았습니다.",
-        hint="구현 순서는 docs/plan.md 9절을 참고하세요.",
-    )
+    handler = HANDLERS.get(args.command)
+    if handler is None:
+        raise BudgetAppError(
+            f"'{args.command}' 명령은 아직 구현되지 않았습니다.",
+            hint="구현 순서는 docs/plan.md 9절을 참고하세요.",
+        )
+    return handler(args, open_stores(args.data_dir))
 
 
 def main(argv: Sequence[str] | None = None) -> int:

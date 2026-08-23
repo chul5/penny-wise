@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
@@ -283,3 +284,31 @@ class BudgetStore:
     def replace_all(self, budgets: Iterable[Budget]) -> int:
         """예산 목록을 통째로 교체한다. 반환값은 저장된 건수."""
         return write_jsonl(self.path, (budget.to_dict() for budget in budgets))
+
+
+@dataclass(frozen=True, slots=True)
+class Stores:
+    """저장소 세 개를 한 묶음으로 들고 다닌다.
+
+    핸들러마다 필요한 저장소가 달라서 인자를 따로 받으면 시그니처가 제각각이
+    된다. 한 묶음으로 넘기면 모든 핸들러가 (args, stores) 형태로 통일된다.
+    """
+
+    transactions: TransactionRepository
+    categories: CategoryStore
+    budgets: BudgetStore
+
+
+def open_stores(data_dir: str | Path) -> Stores:
+    """저장 폴더 경로에서 저장소 세 개를 만든다.
+
+    파일은 여기서 만들지 않는다. 쓸 때 append/write가 알아서 생성하고,
+    읽을 때 없는 파일은 빈 스트림으로 취급하기 때문이다. 조회만 했는데
+    파일이 생기는 건 사용자가 기대하지 않는 동작이다.
+    """
+    base = Path(data_dir)
+    return Stores(
+        transactions=TransactionRepository(base / "transactions.jsonl"),
+        categories=CategoryStore(base / "categories.jsonl"),
+        budgets=BudgetStore(base / "budgets.jsonl"),
+    )
