@@ -17,9 +17,11 @@ import traceback
 from typing import Callable, Sequence, TypeVar
 
 from . import __version__
-from .decorators import print_error, report_error
+from .decorators import handle_errors, print_error, report_error
 from .errors import BudgetAppError, ValidationError
 from .repositories import Stores, open_stores
+from .services import add_category, list_categories
+from .validators import parse_category_name
 
 DEFAULT_DATA_DIR = "./data"
 DEFAULT_LIST_LIMIT = 20
@@ -180,6 +182,33 @@ def dispatch(args: argparse.Namespace) -> int:
             hint="구현 순서는 docs/plan.md 9절을 참고하세요.",
         )
     return handler(args, open_stores(args.data_dir))
+
+
+@handle_errors
+def handle_category(args: argparse.Namespace, stores: Stores) -> int:
+    """category add / list.
+
+    본문에 try/except가 없다. 중복이나 잘못된 이름은 서비스가 예외로 올리고
+    @handle_errors가 [오류]/[힌트] 출력과 종료 코드로 바꾼다.
+    """
+    if args.category_action == "list":
+        for name in list_categories(stores.categories):
+            print(f"- {name}")
+        return 0
+
+    if args.category_action == "add":
+        # 이름을 인자로 주면 그대로, 생략하면 물어본다(미션 8절 예시).
+        name = args.name or prompt("카테고리명", parse_category_name)
+        print(f"[저장 완료] category={add_category(stores.categories, name)}")
+        return 0
+
+    raise BudgetAppError(
+        f"'category {args.category_action}' 는 아직 구현되지 않았습니다.",
+        hint="구현 순서는 docs/plan.md 9절을 참고하세요.",
+    )
+
+
+HANDLERS["category"] = handle_category
 
 
 def main(argv: Sequence[str] | None = None) -> int:

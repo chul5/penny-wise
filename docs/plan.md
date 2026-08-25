@@ -301,17 +301,22 @@ backup                                       # 보너스 1
 | 9 | 예산 저장소 (월별 upsert) | `BudgetStore` |
 | 10 | 순수 입력 검증 함수 | `validators.py` |
 | 11 | 대화형 재입력 루프 | `cli.prompt` |
+| 12 | 디스패치 연결 (`--data-dir` → 저장소 묶음) | `Stores`, `open_stores`, `HANDLERS` |
+| 13 | 오류 처리 데코레이터 | `decorators.py` (`@handle_errors`, `print_error`) |
+| 14 | `category add` / `list` + 기본 카테고리 시딩 | `services.py`, `cli.handle_category` |
 
-여기까지로 **저장소 계층과 검증 계층이 완성**됐다. 미션 요구 중 스트리밍(5·7번),
-원자성(6번), dataclass 모델(2번), 3파일 분리(3번), 모듈화(14번)가 충족된다.
+여기까지로 **저장소·검증 계층이 완성**되고 **첫 명령(`category`)이 동작**한다. 미션 요구 중
+스트리밍(5·7번), 원자성(6번), dataclass 모델(2번), 3파일 분리(3번), 모듈화(14번),
+데코레이터(12번), 종료 코드(13번)가 충족된다.
+
+`@log_call` / `@timed`는 만들지 않았다. 미션 12번은 "1개 이상"이고 `@handle_errors`가
+실제 일을 하며 그것을 충족한다. 나머지 둘은 `--verbose`에서만 출력되고 아직 요구하는
+호출자가 없다. 시간 측정이 의미를 갖는 `summary`/`import` 단계에서 다시 판단한다.
 
 ### 남은 작업 (To do)
 
 | # | 작업 | 왜 이 순서인가 | 검증 |
 | --- | --- | --- | --- |
-| 12 | 디스패치 연결: `--data-dir` → 3개 저장소 묶기 | 모든 핸들러가 이 묶음을 받는다 | `--data-dir` 변경이 실제로 반영되는지 |
-| 13 | **`decorators.py`** — `@handle_errors` / `@log_call` / `@timed` | 핸들러를 감싸므로 핸들러보다 먼저 (미션 12번) | 오류 시 스택트레이스 없이 종료코드 1 |
-| 14 | `category add` / `list` + 기본 카테고리 시딩 | `add`의 선행 조건 | 빈 파일에서 기본 카테고리 생성 |
 | 15 | `category remove` (사용 중이면 차단 또는 `--replace-with`) | 거래 스캔이 필요해 분리 | 사용 중 삭제 차단, 치환 동작 |
 | 16 | `add` (대화형) | 카테고리 검증이 준비된 뒤 | 미션 8절 예시와 동일한 출력 |
 | 17 | `list --limit` | `stream_reversed` 재사용 | 최신순, 기본값 동작 |
