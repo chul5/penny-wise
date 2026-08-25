@@ -73,3 +73,20 @@ def parse_amount(value: str) -> int:
 def parse_tags(value: str) -> tuple[str, ...]:
     """쉼표로 구분된 태그. 빈 입력은 빈 튜플이고, 중복은 순서를 지키며 제거한다."""
     return tuple(dict.fromkeys(tag.strip() for tag in value.split(",") if tag.strip()))
+
+
+def parse_category_name(value: str) -> str:
+    """카테고리 이름을 다듬어 돌려준다.
+
+    공백만 있는 이름과 쉼표가 든 이름을 막는다. 쉼표를 막는 이유는 CSV
+    export에서 카테고리가 한 칸을 차지하기 때문이다 - 이름 안에 쉼표가
+    있으면 내보낸 파일을 다시 읽을 때 칸이 어긋난다.
+    """
+    name = value.strip()
+    if not name:
+        raise ValidationError("카테고리 이름을 입력해야 합니다.", hint="예: food")
+    if "," in name:
+        raise ValidationError(
+            "카테고리 이름에 쉼표를 쓸 수 없습니다.", hint=f"입력값: {name}"
+        )
+    return name
