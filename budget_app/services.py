@@ -17,7 +17,7 @@ from .errors import (CategoryInUseError, DuplicateCategoryError, UnknownCategory
                      ValidationError)
 from .models import Transaction
 from .repositories import CategoryStore, Stores
-from .validators import parse_category_name
+from .validators import parse_category_name, parse_date, parse_type
 
 DEFAULT_CATEGORIES = ("food", "transport", "rent", "salary", "etc")
 
@@ -138,13 +138,62 @@ def add_transaction(
 
 
 def recent_transactions(stores: Stores, limit: int) -> Iterator[Transaction]:
-    """최근 입력순으로 limit건을 흘려보낸다.
+    """최근 입력순으로 limit건. 조건 없는 search와 같다."""
+    return search_transactions(stores, limit=limit)
 
-    islice가 limit건을 채우면 제너레이터를 더 당기지 않으므로, 파일이 아무리
-    커도 뒤에서 필요한 만큼만 읽고 멈춘다. 리스트로 만들지 않고 Iterator를
-    그대로 돌려주는 이유가 이것이다 - 중간에 list()를 한 번 끼우면 스트리밍이
-    깨진다.
+
+def search_transactions(
+    stores: Stores,
+    *,
+    limit: int,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    category: str | None = None,
+    type: str | None = None,
+    q: str | None = None,
+    tag: str | None = None,
+) -> Iterator[Transaction]:
+    """조건에 맞는 거래를 최근 입력순으로 흘려보낸다 (미션 7번).
+
+    조건을 제너레이터 체인으로 겹치지 않고 술어(predicate) 하나로 합쳤다.
+    filter가 게으르므로 스트리밍은 그대로 유지되고, 조건 다섯 개를 함수 다섯
+    개로 만드는 것보다 짧다.
+
+    검증은 루프 밖에서 한 번만 한다. 날짜를 정규화해 두는 게 특히 중요하다 -
+    날짜를 문자열로 비교하므로 '2024-1-5'가 그대로 들어오면 비교가 깨진다.
+
+    리스트가 아니라 Iterator를 돌려주는 이유는 list()를 한 번 끼우면 파일을
+    전부 읽게 되어 스트리밍이 깨지기 때문이다.
     """
     if limit <= 0:
         raise ValidationError("--limit 은 1 이상이어야 합니다.", hint=f"입력값: {limit}")
-    return islice(stores.transactions.stream_reversed(), limit)
+
+    start = parse_date(date_from) if date_from else None
+    end = parse_date(date_to) if date_to else None
+    if start and end and start > end:
+        raise ValidationError(
+            "--from 이 --to 보다 늦습니다.", hint=f"--from {start} / --to {end}"
+        )
+    wanted_type = parse_type(type) if type else None
+    wanted_category = resolve_category(stores.categories, category) if category else None
+    # 메모와 태그는 대소문자를 무시해 찾는다. 한글에는 영향이 없고, 영문
+    # 메모를 찾을 때 사용자가 대소문자를 정확히 기억하지 않아도 된다.
+    keyword = q.strip().casefold() if q else None
+    wanted_tag = tag.strip().casefold() if tag else None
+
+    def matches(transaction: Transaction) -> bool:
+        if start and transaction.date < start:
+            return False
+        if end and transaction.date > end:
+            return False
+        if wanted_type and transaction.type != wanted_type:
+            return False
+        if wanted_category and transaction.category != wanted_category:
+            return False
+        if keyword and keyword not in transaction.memo.casefold():
+            return False
+        if wanted_tag and wanted_tag not in (t.casefold() for t in transaction.tags):
+            return False
+        return True
+
+    return islice(filter(matches, stores.transactions.stream_reversed()), limit)

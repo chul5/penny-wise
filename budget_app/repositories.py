@@ -306,6 +306,12 @@ def open_stores(data_dir: str | Path) -> Stores:
     읽을 때 없는 파일은 빈 스트림으로 취급하기 때문이다. 조회만 했는데
     파일이 생기는 건 사용자가 기대하지 않는 동작이다.
     """
+    if not str(data_dir).strip():
+        # 빈 경로는 Path("")가 되어 현재 폴더에 파일을 흘린다. 조용히 엉뚱한
+        # 곳에 저장하는 것보다 바로 알려주는 게 낫다.
+        raise DataFileError(
+            "--data-dir 경로가 비어 있습니다.", hint="예: --data-dir ./data"
+        )
     base = Path(data_dir)
     return Stores(
         transactions=TransactionRepository(base / "transactions.jsonl"),
