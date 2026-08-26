@@ -17,7 +17,7 @@ from .errors import (CategoryInUseError, DuplicateCategoryError, NotFoundError,
                      UnknownCategoryError, ValidationError)
 from .models import Transaction
 from .repositories import CategoryStore, Stores
-from .validators import parse_category_name, parse_date, parse_type
+from .validators import parse_amount, parse_category_name, parse_date, parse_tags, parse_type
 
 DEFAULT_CATEGORIES = ("food", "transport", "rent", "salary", "etc")
 
@@ -222,3 +222,61 @@ def delete_transaction(stores: Stores, tx_id: str) -> Transaction:
         t for t in stores.transactions.stream() if t.id.casefold() != key
     )
     return removed
+
+
+def update_transaction(
+    stores: Stores,
+    tx_id: str,
+    *,
+    date: str | None = None,
+    type: str | None = None,
+    category: str | None = None,
+    amount: str | None = None,
+    memo: str | None = None,
+    tags: str | None = None,
+) -> Transaction:
+    """지정한 항목만 바꾸고 수정된 거래를 돌려준다. 없으면 NotFoundError.
+
+    None은 "주지 않았다"는 뜻이고 빈 문자열은 "비워라"는 뜻이다. 그래서
+    --memo "" 로 메모를 지울 수 있다.
+
+    값은 add와 똑같은 검증 함수를 통과한다. 옵션 방식이라고 검증이 느슨하면
+    대화형으로 넣을 수 없는 값이 옵션으로는 들어가는 구멍이 생긴다.
+
+    frozen dataclass라 부분 수정이 아니라 replace로 새 객체를 만든다.
+    중간에 실패해도 반쯤 수정된 거래가 남지 않는다.
+    """
+    changes: dict[str, object] = {}
+    if date is not None:
+        changes["date"] = parse_date(date)
+    if type is not None:
+        changes["type"] = parse_type(type)
+    if category is not None:
+        changes["category"] = resolve_category(stores.categories, category)
+    if amount is not None:
+        changes["amount"] = parse_amount(amount)
+    if memo is not None:
+        changes["memo"] = memo.strip()
+    if tags is not None:
+        changes["tags"] = parse_tags(tags)
+
+    if not changes:
+        raise ValidationError(
+            "수정할 항목을 하나 이상 지정해야 합니다.",
+            hint="예: update --id TX-000012 --amount 20000",
+        )
+
+    target = tx_id.strip()
+    if not target:
+        raise ValidationError("--id 를 입력해야 합니다.", hint="예: --id TX-000012")
+
+    key = target.casefold()
+    current = next((t for t in stores.transactions.stream() if t.id.casefold() == key), None)
+    if current is None:
+        raise NotFoundError(f"id={target} 거래를 찾을 수 없습니다.")
+
+    updated = replace(current, **changes)
+    stores.transactions.replace_all(
+        updated if t.id.casefold() == key else t for t in stores.transactions.stream()
+    )
+    return updated

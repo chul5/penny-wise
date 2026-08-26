@@ -314,8 +314,10 @@ backup                                       # 보너스 1
 | 17 | `list --limit` (최근 입력순 스트리밍) | `recent_transactions`, `cli.handle_list` |
 | 18 | `search` (조건 5종 + `--limit`) | `search_transactions`, `cli.handle_search` |
 | 19 | `delete --id` | `delete_transaction`, `cli.handle_delete` |
+| 20 | `update --id` (옵션 기반, 항목별 재검증) | `update_transaction`, `cli.handle_update` |
 
-여기까지로 **저장소·검증 계층이 완성**되고 **`category` 전체, `add`, `list`, `search`, `delete`가 동작**한다. 미션 요구 중
+여기까지로 **저장소·검증 계층이 완성**되고 **`category` 전체, `add`, `list`, `search`, `delete`, `update`가 동작**한다.
+미션 최종 결과물 10가지 중 6가지(1·2·3·6·7·8번)가 끝났다. 미션 요구 중
 스트리밍(5·7번), 원자성(6번), dataclass 모델(2번), 3파일 분리(3번), 모듈화(14번),
 데코레이터(12번), 종료 코드(13번)가 충족된다.
 
@@ -327,7 +329,6 @@ backup                                       # 보너스 1
 
 | # | 작업 | 왜 이 순서인가 | 검증 |
 | --- | --- | --- | --- |
-| 20 | `update --id` (옵션 기반) | delete와 같은 경로 | 없는 id 처리, 필드별 재검증 |
 | 21 | `budget set` / `show` | summary의 선행 조건 | 같은 달 재설정 시 교체 |
 | 22 | `summary --month --top` + 예산 사용률/초과 경고 | 집계 + 예산 결합 | 데이터 없는 달 "데이터 없음" |
 | 23 | `export --out` (CSV) | | 조건 없이 실행하면 오류 |

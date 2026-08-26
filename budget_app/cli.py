@@ -22,7 +22,7 @@ from .models import Transaction
 from .repositories import Stores, open_stores
 from .services import (add_category, add_transaction, delete_transaction, list_categories,
                        recent_transactions, remove_category, resolve_category,
-                       search_transactions)
+                       search_transactions, update_transaction)
 from .validators import (parse_amount, parse_category_name, parse_date, parse_tags,
                          parse_type)
 
@@ -124,7 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_update.add_argument("--date", metavar="YYYY-MM-DD")
     p_update.add_argument("--type", dest="tx_type", choices=("income", "expense"))
     p_update.add_argument("--category", metavar="NAME")
-    p_update.add_argument("--amount", type=int, metavar="N")
+    p_update.add_argument("--amount", metavar="N", help="양수 정수 (쉼표 허용)")
     p_update.add_argument("--memo", metavar="TEXT")
     p_update.add_argument("--tags", metavar="A,B", help="쉼표로 구분")
 
@@ -217,21 +217,24 @@ def handle_add(args: argparse.Namespace, stores: Stores) -> int:
     return 0
 
 
-def print_transactions(transactions: Iterable[Transaction], empty_notice: str) -> int:
-    """거래 목록을 출력한다. list와 search가 같은 형식을 쓴다.
+def format_transaction(t: Transaction) -> str:
+    """거래 한 건을 한 줄로 만든다. list/search/update가 같은 형식을 쓴다.
 
     형식은 미션 8절 예시를 따른다. type을 7칸으로 맞추는 건 income과 expense의
     길이가 달라 구분선이 어긋나기 때문이다.
+    """
+    return f"{t.id} | {t.date} | {t.type:<7} | {t.category} | {t.amount} | {t.memo}".rstrip()
 
-    한 건도 없으면 안내를 stderr로 보낸다. 데이터가 아니라 안내이므로
-    `list > out.txt` 했을 때 파일에 섞이면 안 된다.
+
+def print_transactions(transactions: Iterable[Transaction], empty_notice: str) -> int:
+    """거래 목록을 출력한다. 한 건도 없으면 안내를 stderr로 보낸다.
+
+    안내는 데이터가 아니므로 `list > out.txt` 했을 때 파일에 섞이면 안 된다.
     """
     found = False
     for t in transactions:
         found = True
-        print(
-            f"{t.id} | {t.date} | {t.type:<7} | {t.category} | {t.amount} | {t.memo}".rstrip()
-        )
+        print(format_transaction(t))
     if not found:
         print(f"[안내] {empty_notice}", file=sys.stderr)
     return 0
@@ -271,6 +274,24 @@ def handle_delete(args: argparse.Namespace, stores: Stores) -> int:
     return 0
 
 
+@handle_errors
+def handle_update(args: argparse.Namespace, stores: Stores) -> int:
+    """update - id로 지정한 거래의 일부 항목만 수정한다 (미션 6번, 옵션 방식)."""
+    updated = update_transaction(
+        stores,
+        args.tx_id,
+        date=args.date,
+        type=args.tx_type,
+        category=args.category,
+        amount=args.amount,
+        memo=args.memo,
+        tags=args.tags,
+    )
+    print(f"[수정 완료] id={updated.id}")
+    print(format_transaction(updated))
+    return 0
+
+
 # 명령 이름 -> 핸들러. 명령을 추가할 때 핸들러를 위에 정의하고 여기 한 줄을
 # 더한다. 선언과 값을 한 곳에 모아 두면 지금 무슨 명령이 동작하는지 이 표만
 # 보면 된다. (파이썬은 위에서 아래로 실행하므로 함수 이름을 쓰는 이 표는
@@ -281,6 +302,7 @@ HANDLERS: dict[str, Handler] = {
     "list": handle_list,
     "search": handle_search,
     "delete": handle_delete,
+    "update": handle_update,
 }
 
 
