@@ -204,6 +204,10 @@ def rewrite(self, transform: Callable[[Iterator[T]], Iterator[T]]) -> int:
 
 ## 5. 예외 계층 (`errors.py`) 과 종료 코드 (미션 13번)
 
+> `UnknownCategoryError`는 `ValidationError`를 상속한다. 미등록 카테고리는 사용자가 다시
+> 입력하면 해결되는 종류의 오류이고, 미션 4번이 "없으면 안내 후 재입력"을 요구한다.
+> 상속시켜 두면 `cli.prompt`가 이미 `ValidationError`를 잡아 되묻기 때문에 추가 코드가 없다.
+
 ```python
 class BudgetAppError(Exception):
     exit_code = 1
@@ -305,8 +309,9 @@ backup                                       # 보너스 1
 | 13 | 오류 처리 데코레이터 | `decorators.py` (`@handle_errors`, `print_error`) |
 | 14 | `category add` / `list` + 기본 카테고리 시딩 | `services.py`, `cli.handle_category` |
 | 15 | `category remove` (차단 / `--replace-with` 치환) | `resolve_category`, `remove_category` |
+| 16 | `add` (대화형 거래 입력) | `add_transaction`, `cli.handle_add` |
 
-여기까지로 **저장소·검증 계층이 완성**되고 **`category` 명령 전체(add/list/remove)가 동작**한다. 미션 요구 중
+여기까지로 **저장소·검증 계층이 완성**되고 **`category` 전체와 `add`가 동작**한다. 미션 요구 중
 스트리밍(5·7번), 원자성(6번), dataclass 모델(2번), 3파일 분리(3번), 모듈화(14번),
 데코레이터(12번), 종료 코드(13번)가 충족된다.
 
@@ -318,7 +323,6 @@ backup                                       # 보너스 1
 
 | # | 작업 | 왜 이 순서인가 | 검증 |
 | --- | --- | --- | --- |
-| 16 | `add` (대화형) | 카테고리 검증이 준비된 뒤 | 미션 8절 예시와 동일한 출력 |
 | 17 | `list --limit` | `stream_reversed` 재사용 | 최신순, 기본값 동작 |
 | 18 | `search` (기간/카테고리/타입/키워드/태그) | 필터 제너레이터 체인 | 조건 교차 케이스 |
 | 19 | `delete --id` | `replace_all` 재사용 | 없는 id → `[오류]` + exit 1 |

@@ -13,6 +13,7 @@ from dataclasses import replace
 
 from .errors import (CategoryInUseError, DuplicateCategoryError, UnknownCategoryError,
                      ValidationError)
+from .models import Transaction
 from .repositories import CategoryStore, Stores
 from .validators import parse_category_name
 
@@ -101,3 +102,34 @@ def remove_category(
 
     stores.categories.replace_all(n for n in list_categories(stores.categories) if n != target)
     return target, substitute, used
+
+
+def add_transaction(
+    stores: Stores,
+    *,
+    date: str,
+    type: str,
+    category: str,
+    amount: int,
+    memo: str = "",
+    tags: tuple[str, ...] = (),
+) -> Transaction:
+    """거래를 저장하고 저장된 객체를 돌려준다.
+
+    값 검증은 이미 끝난 상태로 받는다(validators가 담당). 이 함수가 더하는
+    규칙은 두 가지다. 카테고리를 등록된 표기로 바꾸는 것, 그리고 id를 붙이는 것.
+
+    키워드 전용 인자로 받는 이유는 필드가 여섯 개라 위치 인자로 넘기면
+    date와 type을 뒤바꿔도 아무 오류 없이 저장되기 때문이다.
+    """
+    transaction = Transaction(
+        id=stores.transactions.next_id(),
+        date=date,
+        type=type,
+        category=resolve_category(stores.categories, category),
+        amount=amount,
+        memo=memo,
+        tags=tags,
+    )
+    stores.transactions.append(transaction)
+    return transaction

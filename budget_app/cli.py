@@ -6,7 +6,6 @@
   3) 결과를 출력하고 종료 코드를 정한다
 
 도메인 로직은 절대 여기 오지 않는다.
-(1단계에서는 파서 골격만 세우고, 각 명령 핸들러는 이후 단계에서 채운다.)
 """
 
 from __future__ import annotations
@@ -20,8 +19,10 @@ from . import __version__
 from .decorators import handle_errors, print_error, report_error
 from .errors import BudgetAppError, ValidationError
 from .repositories import Stores, open_stores
-from .services import add_category, list_categories, remove_category
-from .validators import parse_category_name
+from .services import (add_category, add_transaction, list_categories, remove_category,
+                       resolve_category)
+from .validators import (parse_amount, parse_category_name, parse_date, parse_tags,
+                         parse_type)
 
 DEFAULT_DATA_DIR = "./data"
 DEFAULT_LIST_LIMIT = 20
@@ -29,7 +30,12 @@ DEFAULT_TOP_N = 3
 
 PROG = "python -m budget_app"
 
+# prompt()가 넘겨받은 검증 함수의 반환 타입을 그대로 돌려주게 하는 타입 변수.
 T = TypeVar("T")
+
+# 모든 핸들러가 공유하는 시그니처. 이 통일성이 @handle_errors를 전부 똑같이
+# 적용할 수 있게 하고, dispatch를 dict 조회 한 줄로 만든다.
+Handler = Callable[[argparse.Namespace, Stores], int]
 
 
 def prompt(label: str, parse: Callable[[str], T]) -> T:
@@ -163,27 +169,6 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-Handler = Callable[[argparse.Namespace, Stores], int]
-
-# 명령 이름 -> 핸들러. 명령을 구현할 때마다 여기에 한 줄씩 등록한다.
-HANDLERS: dict[str, Handler] = {}
-
-
-def dispatch(args: argparse.Namespace) -> int:
-    """파싱된 인자를 핸들러로 넘긴다. 반환값이 그대로 종료 코드가 된다.
-
-    모든 핸들러가 (args, stores) 시그니처를 공유하므로 여기서 분기할 게 없다.
-    저장소는 --data-dir 로 그때그때 만들어 넘긴다.
-    """
-    handler = HANDLERS.get(args.command)
-    if handler is None:
-        raise BudgetAppError(
-            f"'{args.command}' 명령은 아직 구현되지 않았습니다.",
-            hint="구현 순서는 docs/plan.md 9절을 참고하세요.",
-        )
-    return handler(args, open_stores(args.data_dir))
-
-
 @handle_errors
 def handle_category(args: argparse.Namespace, stores: Stores) -> int:
     """category add / list / remove.
@@ -210,7 +195,49 @@ def handle_category(args: argparse.Namespace, stores: Stores) -> int:
     return 0
 
 
-HANDLERS["category"] = handle_category
+@handle_errors
+def handle_add(args: argparse.Namespace, stores: Stores) -> int:
+    """add - 대화형으로 거래를 입력받아 저장한다 (미션 4번).
+
+    라벨과 순서는 미션 8절 예시를 그대로 따른다. 각 항목은 올바른 값이 들어올
+    때까지 되묻는다. 카테고리도 마찬가지다 - 미등록 이름이면 안내 후 재입력.
+    """
+    transaction = add_transaction(
+        stores,
+        date=prompt("날짜(YYYY-MM-DD)", parse_date),
+        type=prompt("타입(income/expense)", parse_type),
+        category=prompt("카테고리", lambda value: resolve_category(stores.categories, value)),
+        amount=prompt("금액(양수)", parse_amount),
+        memo=prompt("메모(선택)", str.strip),
+        tags=prompt("태그(쉼표로 구분, 없으면 엔터)", parse_tags),
+    )
+    print(f"[저장 완료] id={transaction.id}")
+    return 0
+
+
+# 명령 이름 -> 핸들러. 명령을 추가할 때 핸들러를 위에 정의하고 여기 한 줄을
+# 더한다. 선언과 값을 한 곳에 모아 두면 지금 무슨 명령이 동작하는지 이 표만
+# 보면 된다. (파이썬은 위에서 아래로 실행하므로 함수 이름을 쓰는 이 표는
+# 핸들러 정의보다 뒤에 와야 한다.)
+HANDLERS: dict[str, Handler] = {
+    "category": handle_category,
+    "add": handle_add,
+}
+
+
+def dispatch(args: argparse.Namespace) -> int:
+    """파싱된 인자를 핸들러로 넘긴다. 반환값이 그대로 종료 코드가 된다.
+
+    모든 핸들러가 (args, stores) 시그니처를 공유하므로 여기서 분기할 게 없다.
+    저장소는 --data-dir 로 그때그때 만들어 넘긴다.
+    """
+    handler = HANDLERS.get(args.command)
+    if handler is None:
+        raise BudgetAppError(
+            f"'{args.command}' 명령은 아직 구현되지 않았습니다.",
+            hint="구현 순서는 docs/plan.md 9절을 참고하세요.",
+        )
+    return handler(args, open_stores(args.data_dir))
 
 
 def main(argv: Sequence[str] | None = None) -> int:

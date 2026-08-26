@@ -33,8 +33,13 @@ class NotFoundError(BudgetAppError):
     hint = "list 명령으로 존재하는 id를 확인해 보세요."
 
 
-class UnknownCategoryError(BudgetAppError):
-    """등록되지 않은 카테고리를 사용하려는 경우."""
+class UnknownCategoryError(ValidationError):
+    """등록되지 않은 카테고리를 사용하려는 경우.
+
+    ValidationError를 상속한다. 사용자가 다시 입력하면 해결되는 종류의
+    오류이므로, 대화형 prompt가 이것도 잡아 같은 항목을 되묻는다
+    (미션 4번: "없으면 안내 후 재입력").
+    """
 
     hint = "category list로 목록을 확인하거나 category add로 먼저 등록하세요."
 
