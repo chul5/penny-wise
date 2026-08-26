@@ -9,19 +9,25 @@ CLI를 거치지 않고 이 함수들만 호출해도 앱의 규칙을 그대로
 
 from __future__ import annotations
 
+import csv
 from collections import Counter
 from dataclasses import replace
 from itertools import islice
+from pathlib import Path
 from typing import Iterator
 
-from .errors import (CategoryInUseError, DuplicateCategoryError, NotFoundError,
-                     UnknownCategoryError, ValidationError)
+from .errors import (CategoryInUseError, DataFileError, DuplicateCategoryError,
+                     NotFoundError, UnknownCategoryError, ValidationError)
 from .models import Budget, MonthlySummary, Transaction
 from .repositories import CategoryStore, Stores
 from .validators import (parse_amount, parse_category_name, parse_date, parse_month,
                          parse_tags, parse_type)
 
 DEFAULT_CATEGORIES = ("food", "transport", "rent", "salary", "etc")
+
+# import/export CSV 고정 스키마 (미션 11번). id는 넣지 않는다 - 가져올 때
+# 새로 발급하므로 내보낸 id가 다른 앱/다른 파일에서 의미를 갖지 않는다.
+CSV_FIELDS = ("date", "type", "category", "amount", "memo", "tags")
 
 
 def list_categories(store: CategoryStore) -> list[str]:
@@ -147,7 +153,8 @@ def recent_transactions(stores: Stores, limit: int) -> Iterator[Transaction]:
 def search_transactions(
     stores: Stores,
     *,
-    limit: int,
+    limit: int | None,
+    month: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     category: str | None = None,
@@ -166,10 +173,14 @@ def search_transactions(
 
     리스트가 아니라 Iterator를 돌려주는 이유는 list()를 한 번 끼우면 파일을
     전부 읽게 되어 스트리밍이 깨지기 때문이다.
+
+    limit=None은 "제한 없음"이다. islice(it, None)이 그대로 전부 흘려보내므로
+    export가 조건에 맞는 전체를 받을 수 있다.
     """
-    if limit <= 0:
+    if limit is not None and limit <= 0:
         raise ValidationError("--limit 은 1 이상이어야 합니다.", hint=f"입력값: {limit}")
 
+    wanted_month = parse_month(month) if month else None
     start = parse_date(date_from) if date_from else None
     end = parse_date(date_to) if date_to else None
     if start and end and start > end:
@@ -184,6 +195,8 @@ def search_transactions(
     wanted_tag = tag.strip().casefold() if tag else None
 
     def matches(transaction: Transaction) -> bool:
+        if wanted_month and transaction.month != wanted_month:
+            return False
         if start and transaction.date < start:
             return False
         if end and transaction.date > end:
@@ -347,3 +360,58 @@ def summarize_month(stores: Stores, month: str, top: int) -> MonthlySummary:
         top_expenses=tuple(per_category.most_common(top)),
         budget=budget.amount if budget else None,
     )
+
+
+def export_transactions(
+    stores: Stores,
+    out_path: str,
+    *,
+    month: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> int:
+    """조건에 맞는 거래를 CSV로 내보내고 건수를 돌려준다 (미션 11번).
+
+    조건을 하나 이상 반드시 받는다. 조건 없이 전체를 뽑는 건 실수일 가능성이
+    높아 미션이 명시적으로 금지한다.
+
+    csv.DictWriter로 쓴다. tags를 쉼표로 이어붙이므로 값 안에 구분자가 들어가는데,
+    직접 문자열을 조립하면 칸이 어긋난다. csv 모듈이 알아서 큰따옴표로 감싼다.
+
+    한 줄씩 흘려 쓴다. 조건에 맞는 전체를 리스트로 모아두지 않으므로 10만 건을
+    내보내도 메모리는 일정하다.
+    """
+    if not (month or date_from or date_to):
+        raise ValidationError(
+            "--month 또는 --from/--to 중 하나 이상을 지정해야 합니다.",
+            hint="예: export --out out.csv --month 2024-01",
+        )
+
+    rows = search_transactions(
+        stores, limit=None, month=month, date_from=date_from, date_to=date_to
+    )
+    count = 0
+    try:
+        # newline="" 은 csv 모듈 권장값이다. 없으면 플랫폼에 따라 빈 줄이 끼어든다.
+        with Path(out_path).open("w", encoding="utf-8", newline="") as fp:
+            writer = csv.DictWriter(fp, fieldnames=CSV_FIELDS)
+            writer.writeheader()
+            for transaction in rows:
+                writer.writerow(
+                    {
+                        "date": transaction.date,
+                        "type": transaction.type,
+                        "category": transaction.category,
+                        "amount": transaction.amount,
+                        "memo": transaction.memo,
+                        "tags": ",".join(transaction.tags),
+                    }
+                )
+                count += 1
+    except OSError as exc:
+        # 기본 hint는 --data-dir 를 가리키므로 여기서는 맞지 않는다. --out 경로 문제다.
+        raise DataFileError(
+            f"CSV 파일에 쓸 수 없습니다: {out_path}",
+            hint="--out 의 상위 폴더가 있는지, 쓰기 권한이 있는지 확인하세요.",
+        ) from exc
+    return count

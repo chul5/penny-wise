@@ -324,10 +324,15 @@ backup                                       # 보너스 1
 | 20 | `update --id` (옵션 기반, 항목별 재검증) | `update_transaction`, `cli.handle_update` |
 | 21 | `budget set` / `show` | `set_budget`, `get_budget`, `list_budgets` |
 | 22 | `summary --month --top` + 예산 사용률/초과 경고 | `MonthlySummary`, `summarize_month`, `cli.handle_summary` |
+| 23 | `export --out` (CSV, 조건 필수) | `CSV_FIELDS`, `export_transactions`, `cli.handle_export` |
 
 여기까지로 **저장소·검증 계층이 완성**되고 **`category` 전체, `add`, `list`, `search`, `delete`, `update`, `budget`, `summary`가 동작**한다.
-미션 최종 결과물 10가지 중 **8가지**(1·2·3·4·5·6·7·8번)가 끝났다.
-남은 것은 9번(import/export)과 10번(README)뿐이다. 미션 요구 중
+미션 최종 결과물 10가지 중 **8.5가지**가 끝났다. 남은 것은 9번의 절반(`import`)과
+10번(README)뿐이다.
+
+CSV 줄바꿈은 `csv` 모듈 기본값인 CRLF다(RFC 4180 표준). `csv.DictReader`가
+CRLF/LF를 모두 읽으므로 왕복에는 영향이 없다. LF로 바꾸려면 writer에
+`lineterminator="\n"`을 주면 된다. 미션 요구 중
 스트리밍(5·7번), 원자성(6번), dataclass 모델(2번), 3파일 분리(3번), 모듈화(14번),
 데코레이터(12번), 종료 코드(13번)가 충족된다.
 
@@ -339,7 +344,6 @@ backup                                       # 보너스 1
 
 | # | 작업 | 왜 이 순서인가 | 검증 |
 | --- | --- | --- | --- |
-| 23 | `export --out` (CSV) | | 조건 없이 실행하면 오류 |
 | 24 | `import --from` (CSV) | export가 만든 파일로 검증 | 왕복 건수 일치 |
 | 25 | `README.md` | | 실행법/파일 위치/명령 예시/CSV 스키마 |
 

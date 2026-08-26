@@ -20,8 +20,8 @@ from .decorators import handle_errors, print_error, report_error
 from .errors import BudgetAppError, ValidationError
 from .models import Transaction
 from .repositories import Stores, open_stores
-from .services import (add_category, add_transaction, delete_transaction, get_budget,
-                       list_budgets, list_categories,
+from .services import (add_category, add_transaction, delete_transaction, export_transactions,
+                       get_budget, list_budgets, list_categories,
                        recent_transactions, remove_category, resolve_category,
                        search_transactions, set_budget, summarize_month, update_transaction)
 from .validators import (parse_amount, parse_category_name, parse_date, parse_tags,
@@ -356,6 +356,20 @@ def handle_summary(args: argparse.Namespace, stores: Stores) -> int:
     return 0
 
 
+@handle_errors
+def handle_export(args: argparse.Namespace, stores: Stores) -> int:
+    """export - 조건에 맞는 거래를 CSV로 내보낸다 (미션 11번)."""
+    count = export_transactions(
+        stores,
+        args.out,
+        month=args.month,
+        date_from=args.date_from,
+        date_to=args.date_to,
+    )
+    print(f"[완료] {args.out} ({count} records)")
+    return 0
+
+
 # 명령 이름 -> 핸들러. 명령을 추가할 때 핸들러를 위에 정의하고 여기 한 줄을
 # 더한다. 선언과 값을 한 곳에 모아 두면 지금 무슨 명령이 동작하는지 이 표만
 # 보면 된다. (파이썬은 위에서 아래로 실행하므로 함수 이름을 쓰는 이 표는
@@ -369,6 +383,7 @@ HANDLERS: dict[str, Handler] = {
     "update": handle_update,
     "budget": handle_budget,
     "summary": handle_summary,
+    "export": handle_export,
 }
 
 
