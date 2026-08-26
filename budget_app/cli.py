@@ -20,9 +20,10 @@ from .decorators import handle_errors, print_error, report_error
 from .errors import BudgetAppError, ValidationError
 from .models import Transaction
 from .repositories import Stores, open_stores
-from .services import (add_category, add_transaction, delete_transaction, list_categories,
+from .services import (add_category, add_transaction, delete_transaction, get_budget,
+                       list_budgets, list_categories,
                        recent_transactions, remove_category, resolve_category,
-                       search_transactions, update_transaction)
+                       search_transactions, set_budget, update_transaction)
 from .validators import (parse_amount, parse_category_name, parse_date, parse_tags,
                          parse_type)
 
@@ -137,7 +138,8 @@ def build_parser() -> argparse.ArgumentParser:
     budget_sub = p_budget.add_subparsers(dest="budget_action", metavar="<action>", required=True)
     p_budget_set = budget_sub.add_parser("set", help="월 예산 저장")
     p_budget_set.add_argument("--month", required=True, metavar="YYYY-MM")
-    p_budget_set.add_argument("--amount", type=int, required=True, metavar="N")
+    p_budget_set.add_argument("--amount", required=True, metavar="N",
+                              help="양수 정수 (쉼표 허용)")
     p_budget_show = budget_sub.add_parser("show", help="저장된 예산 조회")
     p_budget_show.add_argument("--month", metavar="YYYY-MM", help="생략하면 전체 목록")
 
@@ -292,6 +294,31 @@ def handle_update(args: argparse.Namespace, stores: Stores) -> int:
     return 0
 
 
+@handle_errors
+def handle_budget(args: argparse.Namespace, stores: Stores) -> int:
+    """budget set / show - 월 예산을 저장하고 조회한다 (미션 9번)."""
+    if args.budget_action == "set":
+        budget = set_budget(stores, args.month, args.amount)
+        print(f"[저장 완료] {budget.month} 예산 {budget.amount}원")
+        return 0
+
+    if args.month:
+        budget = get_budget(stores, args.month)
+        if budget is None:
+            print(f"[안내] {args.month} 예산이 설정되지 않았습니다.", file=sys.stderr)
+            return 0
+        print(f"- {budget.month}: {budget.amount}원")
+        return 0
+
+    found = False
+    for budget in list_budgets(stores):
+        found = True
+        print(f"- {budget.month}: {budget.amount}원")
+    if not found:
+        print("[안내] 설정된 예산이 없습니다.", file=sys.stderr)
+    return 0
+
+
 # 명령 이름 -> 핸들러. 명령을 추가할 때 핸들러를 위에 정의하고 여기 한 줄을
 # 더한다. 선언과 값을 한 곳에 모아 두면 지금 무슨 명령이 동작하는지 이 표만
 # 보면 된다. (파이썬은 위에서 아래로 실행하므로 함수 이름을 쓰는 이 표는
@@ -303,6 +330,7 @@ HANDLERS: dict[str, Handler] = {
     "search": handle_search,
     "delete": handle_delete,
     "update": handle_update,
+    "budget": handle_budget,
 }
 
 

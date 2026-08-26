@@ -15,9 +15,10 @@ from typing import Iterator
 
 from .errors import (CategoryInUseError, DuplicateCategoryError, NotFoundError,
                      UnknownCategoryError, ValidationError)
-from .models import Transaction
+from .models import Budget, Transaction
 from .repositories import CategoryStore, Stores
-from .validators import parse_amount, parse_category_name, parse_date, parse_tags, parse_type
+from .validators import (parse_amount, parse_category_name, parse_date, parse_month,
+                         parse_tags, parse_type)
 
 DEFAULT_CATEGORIES = ("food", "transport", "rent", "salary", "etc")
 
@@ -280,3 +281,28 @@ def update_transaction(
         updated if t.id.casefold() == key else t for t in stores.transactions.stream()
     )
     return updated
+
+
+def set_budget(stores: Stores, month: str, amount: str) -> Budget:
+    """월 예산을 저장하고 저장된 값을 돌려준다. 이미 있으면 교체한다 (미션 9번).
+
+    금액은 거래와 같은 규칙을 쓴다. 예산에만 0이나 음수를 허용하면 사용률
+    계산에서 0으로 나누게 된다.
+    """
+    normalized = parse_month(month)
+    value = parse_amount(amount)
+    stores.budgets.set(normalized, value)
+    return Budget(normalized, value)
+
+
+def get_budget(stores: Stores, month: str) -> Budget | None:
+    """해당 월 예산. 설정된 적이 없으면 None.
+
+    월을 정규화해서 넘기므로 '2024-1'로 물어도 '2024-01'을 찾는다.
+    """
+    return stores.budgets.get(parse_month(month))
+
+
+def list_budgets(stores: Stores) -> Iterator[Budget]:
+    """저장된 모든 월 예산을 월 순서대로. cli가 저장소를 직접 만지지 않게 한다."""
+    return stores.budgets.stream()
