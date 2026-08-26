@@ -23,7 +23,7 @@ from .repositories import Stores, open_stores
 from .services import (add_category, add_transaction, delete_transaction, get_budget,
                        list_budgets, list_categories,
                        recent_transactions, remove_category, resolve_category,
-                       search_transactions, set_budget, update_transaction)
+                       search_transactions, set_budget, summarize_month, update_transaction)
 from .validators import (parse_amount, parse_category_name, parse_date, parse_tags,
                          parse_type)
 
@@ -319,6 +319,43 @@ def handle_budget(args: argparse.Namespace, stores: Stores) -> int:
     return 0
 
 
+@handle_errors
+def handle_summary(args: argparse.Namespace, stores: Stores) -> int:
+    """summary - 월별 요약과 예산 사용률을 출력한다 (미션 8·9번).
+
+    출력은 미션 8절 예시의 블록 형태를 따른다.
+
+    이 명령의 출력은 전부 stdout이다. list/search에서 "없습니다" 안내를
+    stderr로 보낸 것과 다른데, 저기서는 안내가 데이터 스트림을 오염시키기
+    때문이고 여기서는 "데이터 없음"이나 초과 경고 자체가 리포트의 내용이다.
+    summary > report.txt 하면 그 문장들도 파일에 들어가야 맞다.
+    """
+    summary = summarize_month(stores, args.month, args.top)
+
+    if summary.is_empty:
+        print(f"{summary.month} 데이터 없음")
+        return 0
+
+    print(f"총 수입: {summary.total_income}원")
+    print(f"총 지출: {summary.total_expense}원")
+    print(f"잔액: {summary.balance}원")
+
+    if summary.budget is not None:
+        print(f"예산: {summary.budget}원 (사용률 {summary.usage_rate:.1f}%)")
+        if summary.over_budget:
+            print(f"[경고] 예산을 {summary.total_expense - summary.budget}원 초과했습니다.")
+
+    if summary.top_expenses:
+        # 헤더의 숫자는 요청한 --top 이 아니라 실제 건수다. 카테고리가 2개뿐인데
+        # "TOP 3"이라고 쓰면 뭔가 빠진 것처럼 보인다.
+        print()
+        print(f"지출 TOP {len(summary.top_expenses)}")
+        for rank, (category, total) in enumerate(summary.top_expenses, start=1):
+            print(f"{rank}) {category} {total}원")
+
+    return 0
+
+
 # 명령 이름 -> 핸들러. 명령을 추가할 때 핸들러를 위에 정의하고 여기 한 줄을
 # 더한다. 선언과 값을 한 곳에 모아 두면 지금 무슨 명령이 동작하는지 이 표만
 # 보면 된다. (파이썬은 위에서 아래로 실행하므로 함수 이름을 쓰는 이 표는
@@ -331,6 +368,7 @@ HANDLERS: dict[str, Handler] = {
     "delete": handle_delete,
     "update": handle_update,
     "budget": handle_budget,
+    "summary": handle_summary,
 }
 
 

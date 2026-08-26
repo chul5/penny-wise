@@ -227,6 +227,13 @@ class DataFileError(BudgetAppError): ...            # 권한/손상
 
 ## 6. CLI 설계 (`cli.py`)
 
+> **stdout / stderr 구분 규칙.** 데이터는 stdout, 그 외는 stderr다.
+> `list`/`search`/`budget show`의 "없습니다" 안내는 stderr로 보낸다 -
+> `list > out.txt` 했을 때 데이터 파일에 문구가 섞이면 안 되기 때문이다.
+> 반대로 `summary`는 전부 stdout이다. "데이터 없음"과 초과 경고 자체가
+> 리포트의 내용이므로 `summary > report.txt`에 들어가야 맞다.
+> 손상된 줄 경고(`repositories.warn`)는 항상 stderr.
+
 `argparse` + `add_subparsers(dest="command", required=True)`. 모든 서브커맨드에 `--help` 자동 제공.
 
 ```
@@ -316,10 +323,11 @@ backup                                       # 보너스 1
 | 19 | `delete --id` | `delete_transaction`, `cli.handle_delete` |
 | 20 | `update --id` (옵션 기반, 항목별 재검증) | `update_transaction`, `cli.handle_update` |
 | 21 | `budget set` / `show` | `set_budget`, `get_budget`, `list_budgets` |
+| 22 | `summary --month --top` + 예산 사용률/초과 경고 | `MonthlySummary`, `summarize_month`, `cli.handle_summary` |
 
-여기까지로 **저장소·검증 계층이 완성**되고 **`category` 전체, `add`, `list`, `search`, `delete`, `update`가 동작**한다.
-미션 최종 결과물 10가지 중 7가지(1·2·3·5(저장 부분)·6·7·8번)가 끝났다.
-`budget`의 나머지 절반(summary에서 사용률/초과 경고)은 22단계에서 붙인다. 미션 요구 중
+여기까지로 **저장소·검증 계층이 완성**되고 **`category` 전체, `add`, `list`, `search`, `delete`, `update`, `budget`, `summary`가 동작**한다.
+미션 최종 결과물 10가지 중 **8가지**(1·2·3·4·5·6·7·8번)가 끝났다.
+남은 것은 9번(import/export)과 10번(README)뿐이다. 미션 요구 중
 스트리밍(5·7번), 원자성(6번), dataclass 모델(2번), 3파일 분리(3번), 모듈화(14번),
 데코레이터(12번), 종료 코드(13번)가 충족된다.
 
@@ -331,7 +339,6 @@ backup                                       # 보너스 1
 
 | # | 작업 | 왜 이 순서인가 | 검증 |
 | --- | --- | --- | --- |
-| 22 | `summary --month --top` + 예산 사용률/초과 경고 | 집계 + 예산 결합 | 데이터 없는 달 "데이터 없음" |
 | 23 | `export --out` (CSV) | | 조건 없이 실행하면 오류 |
 | 24 | `import --from` (CSV) | export가 만든 파일로 검증 | 왕복 건수 일치 |
 | 25 | `README.md` | | 실행법/파일 위치/명령 예시/CSV 스키마 |
