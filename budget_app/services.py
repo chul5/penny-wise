@@ -9,8 +9,11 @@ CLI를 거치지 않고 이 함수들만 호출해도 앱의 규칙을 그대로
 
 from __future__ import annotations
 
-from .errors import DuplicateCategoryError
-from .repositories import CategoryStore
+from dataclasses import replace
+
+from .errors import (CategoryInUseError, DuplicateCategoryError, UnknownCategoryError,
+                     ValidationError)
+from .repositories import CategoryStore, Stores
 from .validators import parse_category_name
 
 DEFAULT_CATEGORIES = ("food", "transport", "rent", "salary", "etc")
@@ -46,3 +49,55 @@ def add_category(store: CategoryStore, name: str) -> str:
             raise DuplicateCategoryError(f"이미 있는 카테고리입니다: {existing}")
     store.append(clean)
     return clean
+
+
+def resolve_category(store: CategoryStore, name: str) -> str:
+    """입력한 이름을 등록된 표기로 바꿔 준다. 없으면 오류.
+
+    add와 마찬가지로 대소문자를 무시해 찾되, 돌려주는 건 저장된 표기다.
+    사용자가 NETFLIX라고 쳐도 거래에는 등록된 Netflix가 들어가야 한다.
+    """
+    clean = parse_category_name(name)
+    for existing in list_categories(store):
+        if existing.casefold() == clean.casefold():
+            return existing
+    raise UnknownCategoryError(f"등록되지 않은 카테고리입니다: {clean}")
+
+
+def remove_category(
+    stores: Stores, name: str, replace_with: str | None = None
+) -> tuple[str, str | None, int]:
+    """카테고리를 삭제한다. 반환값은 (삭제된 이름, 대체 카테고리, 옮긴 거래 건수).
+
+    이름을 둘 다 등록된 표기로 돌려주므로, 호출한 쪽이 사용자 입력을 다시
+    해석할 필요가 없다.
+
+    사용 중인 카테고리를 그냥 지우면 거래의 category가 등록 목록에 없는 값으로
+    남아 데이터가 어긋난다. 그래서 미션 10번대로 삭제를 막거나 대체 카테고리를
+    요구한다.
+
+    순서가 중요하다. 거래를 먼저 옮기고 카테고리를 나중에 지운다. 반대로 하면
+    중간에 실패했을 때 거래가 이미 없는 카테고리를 가리키게 된다.
+    """
+    target = resolve_category(stores.categories, name)
+    used = sum(1 for t in stores.transactions.stream() if t.category == target)
+    substitute: str | None = None
+
+    if used:
+        if replace_with is None:
+            raise CategoryInUseError(
+                f"'{target}' 카테고리를 사용하는 거래가 {used}건 있습니다."
+            )
+        substitute = resolve_category(stores.categories, replace_with)
+        if substitute == target:
+            raise ValidationError(
+                "대체 카테고리가 삭제할 카테고리와 같습니다.",
+                hint=f"--replace-with 에 다른 카테고리를 지정하세요: {target}",
+            )
+        stores.transactions.replace_all(
+            replace(t, category=substitute) if t.category == target else t
+            for t in stores.transactions.stream()
+        )
+
+    stores.categories.replace_all(n for n in list_categories(stores.categories) if n != target)
+    return target, substitute, used

@@ -20,7 +20,7 @@ from . import __version__
 from .decorators import handle_errors, print_error, report_error
 from .errors import BudgetAppError, ValidationError
 from .repositories import Stores, open_stores
-from .services import add_category, list_categories
+from .services import add_category, list_categories, remove_category
 from .validators import parse_category_name
 
 DEFAULT_DATA_DIR = "./data"
@@ -186,10 +186,10 @@ def dispatch(args: argparse.Namespace) -> int:
 
 @handle_errors
 def handle_category(args: argparse.Namespace, stores: Stores) -> int:
-    """category add / list.
+    """category add / list / remove.
 
-    본문에 try/except가 없다. 중복이나 잘못된 이름은 서비스가 예외로 올리고
-    @handle_errors가 [오류]/[힌트] 출력과 종료 코드로 바꾼다.
+    본문에 try/except가 없다. 중복이나 잘못된 이름, 사용 중 삭제는 서비스가
+    예외로 올리고 @handle_errors가 [오류]/[힌트] 출력과 종료 코드로 바꾼다.
     """
     if args.category_action == "list":
         for name in list_categories(stores.categories):
@@ -202,10 +202,12 @@ def handle_category(args: argparse.Namespace, stores: Stores) -> int:
         print(f"[저장 완료] category={add_category(stores.categories, name)}")
         return 0
 
-    raise BudgetAppError(
-        f"'category {args.category_action}' 는 아직 구현되지 않았습니다.",
-        hint="구현 순서는 docs/plan.md 9절을 참고하세요.",
-    )
+    name, substitute, moved = remove_category(stores, args.name, args.replace_with)
+    if moved:
+        print(f"[삭제 완료] category={name} (거래 {moved}건을 {substitute}로 옮겼습니다)")
+    else:
+        print(f"[삭제 완료] category={name}")
+    return 0
 
 
 HANDLERS["category"] = handle_category
