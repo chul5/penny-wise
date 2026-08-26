@@ -143,3 +143,12 @@ class MonthlySummary:
     @property
     def over_budget(self) -> bool:
         return self.budget is not None and self.total_expense > self.budget
+
+
+@dataclass(frozen=True, slots=True)
+class ImportResult:
+    """CSV 가져오기 결과. 저장되는 데이터가 아니라 보고서다."""
+
+    imported: int
+    skipped: int
+    reasons: tuple[str, ...] = ()  # 건너뛴 행의 줄 번호와 이유

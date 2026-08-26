@@ -18,7 +18,7 @@ from typing import Iterator
 
 from .errors import (CategoryInUseError, DataFileError, DuplicateCategoryError,
                      NotFoundError, UnknownCategoryError, ValidationError)
-from .models import Budget, MonthlySummary, Transaction
+from .models import Budget, ImportResult, MonthlySummary, Transaction, format_id, parse_id
 from .repositories import CategoryStore, Stores
 from .validators import (parse_amount, parse_category_name, parse_date, parse_month,
                          parse_tags, parse_type)
@@ -415,3 +415,67 @@ def export_transactions(
             hint="--out 의 상위 폴더가 있는지, 쓰기 권한이 있는지 확인하세요.",
         ) from exc
     return count
+
+
+def import_transactions(stores: Stores, src_path: str, *, dry_run: bool = False) -> ImportResult:
+    """CSV에서 거래를 일괄 등록하고 결과를 돌려준다 (미션 11번).
+
+    한 행이 잘못됐다고 전체를 되돌리지 않는다. 100행 중 3행이 틀렸을 때
+    97행을 버리는 건 사용자가 원하는 동작이 아니다. 대신 건너뛴 행의 줄
+    번호와 이유를 모아 보고한다.
+
+    검증은 add와 같은 함수를 쓴다. CSV로는 대화형으로 못 넣는 값이 들어가는
+    구멍이 있으면 안 된다.
+
+    id는 next_id()를 한 번만 부르고 그 다음부터 직접 증가시킨다. 행마다
+    next_id()를 부르면 파일 끝을 매번 다시 읽는다.
+
+    dry_run이면 검증만 하고 아무것도 쓰지 않는다.
+    """
+    path = Path(src_path)
+    if not path.exists():
+        raise DataFileError(
+            f"CSV 파일이 없습니다: {src_path}", hint="--from 경로를 확인하세요."
+        )
+
+    required = ("date", "type", "category", "amount")
+    imported = 0
+    skipped = 0
+    reasons: list[str] = []
+
+    try:
+        with path.open(encoding="utf-8", newline="") as fp:
+            reader = csv.DictReader(fp)
+            header = reader.fieldnames or []
+            missing = [column for column in required if column not in header]
+            if missing:
+                raise DataFileError(
+                    f"CSV 헤더에 필수 칸이 없습니다: {', '.join(missing)}",
+                    hint=f"첫 줄은 {','.join(CSV_FIELDS)} 형식이어야 합니다.",
+                )
+
+            seq = parse_id(stores.transactions.next_id()) or 1
+            for lineno, row in enumerate(reader, start=2):  # 1행은 헤더
+                try:
+                    transaction = Transaction(
+                        id=format_id(seq),
+                        date=parse_date(row.get("date") or ""),
+                        type=parse_type(row.get("type") or ""),
+                        category=resolve_category(stores.categories, row.get("category") or ""),
+                        amount=parse_amount(row.get("amount") or ""),
+                        memo=(row.get("memo") or "").strip(),
+                        tags=parse_tags(row.get("tags") or ""),
+                    )
+                except ValidationError as exc:
+                    skipped += 1
+                    reasons.append(f"{lineno}행: {exc.message}")
+                    continue
+
+                if not dry_run:
+                    stores.transactions.append(transaction)
+                seq += 1
+                imported += 1
+    except OSError as exc:
+        raise DataFileError(f"CSV 파일을 읽을 수 없습니다: {src_path}") from exc
+
+    return ImportResult(imported=imported, skipped=skipped, reasons=tuple(reasons))

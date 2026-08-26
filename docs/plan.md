@@ -171,7 +171,9 @@ def rewrite(self, transform: Callable[[Iterator[T]], Iterator[T]]) -> int:
 - `ensure_file(path)` — 상위 폴더까지 생성
 - `read_jsonl(path)` — 앞에서부터 스트리밍
 - `read_jsonl_reversed(path, chunk_size)` — 뒤에서부터 청크 단위 스트리밍
-- `append_jsonl(path, record)` — 끝에 한 줄 추가 (개행 누락 보충)
+- `append_jsonl(path, record)` — 끝에 한 줄 추가 (개행 누락 보충).
+  마지막 1바이트만 `seek`으로 확인한다. 처음에는 `read_bytes()[-1:]`로 전체를 읽었는데,
+  import가 5,000행을 연달아 append하면 매번 파일을 통째로 읽어 O(N^2)이 됐다.
 - `write_jsonl(path, records)` — 임시 파일 + `os.replace` 원자적 교체
 - `parse_line(...)` / `load_models(...)` — 깨진 줄 경고 후 건너뛰기 (양쪽 리더가 공유)
 - `warn(message)` — stderr 출력. `logging` 설정이 필요 없어 3줄로 끝냈다
@@ -325,10 +327,11 @@ backup                                       # 보너스 1
 | 21 | `budget set` / `show` | `set_budget`, `get_budget`, `list_budgets` |
 | 22 | `summary --month --top` + 예산 사용률/초과 경고 | `MonthlySummary`, `summarize_month`, `cli.handle_summary` |
 | 23 | `export --out` (CSV, 조건 필수) | `CSV_FIELDS`, `export_transactions`, `cli.handle_export` |
+| 24 | `import --from` (부분 성공 + `--dry-run`) | `ImportResult`, `import_transactions`, `cli.handle_import` |
 
-여기까지로 **저장소·검증 계층이 완성**되고 **`category` 전체, `add`, `list`, `search`, `delete`, `update`, `budget`, `summary`가 동작**한다.
-미션 최종 결과물 10가지 중 **8.5가지**가 끝났다. 남은 것은 9번의 절반(`import`)과
-10번(README)뿐이다.
+여기까지로 **저장소·검증 계층이 완성**되고 **열 개 명령 전부(`add` `list` `search` `summary` `budget` `category` `update` `delete` `export` `import`)가 동작**한다.
+미션 최종 결과물 10가지 중 **9가지**가 끝났다. 열 개 명령이 모두 동작한다.
+남은 필수 작업은 **README(10번)** 하나뿐이다.
 
 CSV 줄바꿈은 `csv` 모듈 기본값인 CRLF다(RFC 4180 표준). `csv.DictReader`가
 CRLF/LF를 모두 읽으므로 왕복에는 영향이 없다. LF로 바꾸려면 writer에
@@ -344,7 +347,6 @@ CRLF/LF를 모두 읽으므로 왕복에는 영향이 없다. LF로 바꾸려면
 
 | # | 작업 | 왜 이 순서인가 | 검증 |
 | --- | --- | --- | --- |
-| 24 | `import --from` (CSV) | export가 만든 파일로 검증 | 왕복 건수 일치 |
 | 25 | `README.md` | | 실행법/파일 위치/명령 예시/CSV 스키마 |
 
 ### 보너스 (선택)

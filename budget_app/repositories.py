@@ -121,7 +121,14 @@ def append_jsonl(path: Path, record: dict[str, Any]) -> None:
     try:
         # 마지막 줄에 개행이 없으면(손으로 편집한 경우) 두 레코드가 한 줄로
         # 붙어버린다. 그러면 두 건이 모두 깨지므로 개행을 먼저 보충한다.
-        needs_newline = path.stat().st_size > 0 and path.read_bytes()[-1:] != b"\n"
+        #
+        # 마지막 1바이트만 확인한다. read_bytes()로 전체를 읽으면 import처럼
+        # 여러 건을 연달아 append할 때 매번 파일을 통째로 읽어 O(N^2)이 된다.
+        needs_newline = False
+        if path.stat().st_size > 0:
+            with path.open("rb") as probe:
+                probe.seek(-1, os.SEEK_END)
+                needs_newline = probe.read(1) != b"\n"
         with path.open("a", encoding="utf-8") as fp:
             if needs_newline:
                 fp.write("\n")
