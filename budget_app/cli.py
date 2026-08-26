@@ -19,8 +19,8 @@ from . import __version__
 from .decorators import handle_errors, print_error, report_error
 from .errors import BudgetAppError, ValidationError
 from .repositories import Stores, open_stores
-from .services import (add_category, add_transaction, list_categories, remove_category,
-                       resolve_category)
+from .services import (add_category, add_transaction, list_categories, recent_transactions,
+                       remove_category, resolve_category)
 from .validators import (parse_amount, parse_category_name, parse_date, parse_tags,
                          parse_type)
 
@@ -215,6 +215,27 @@ def handle_add(args: argparse.Namespace, stores: Stores) -> int:
     return 0
 
 
+@handle_errors
+def handle_list(args: argparse.Namespace, stores: Stores) -> int:
+    """list - 최근 입력순으로 거래를 출력한다 (미션 5번).
+
+    출력 형식은 미션 8절 예시를 따른다. type을 7칸으로 맞추는 건 income과
+    expense의 길이가 달라 구분선이 어긋나기 때문이다.
+    """
+    found = False
+    for transaction in recent_transactions(stores, args.limit):
+        found = True
+        print(
+            f"{transaction.id} | {transaction.date} | {transaction.type:<7} | "
+            f"{transaction.category} | {transaction.amount} | {transaction.memo}".rstrip()
+        )
+    if not found:
+        # 데이터가 아니라 안내이므로 stderr로 보낸다. list > out.txt 했을 때
+        # 파일에 안내 문구가 섞이면 안 된다.
+        print("[안내] 저장된 거래가 없습니다.", file=sys.stderr)
+    return 0
+
+
 # 명령 이름 -> 핸들러. 명령을 추가할 때 핸들러를 위에 정의하고 여기 한 줄을
 # 더한다. 선언과 값을 한 곳에 모아 두면 지금 무슨 명령이 동작하는지 이 표만
 # 보면 된다. (파이썬은 위에서 아래로 실행하므로 함수 이름을 쓰는 이 표는
@@ -222,6 +243,7 @@ def handle_add(args: argparse.Namespace, stores: Stores) -> int:
 HANDLERS: dict[str, Handler] = {
     "category": handle_category,
     "add": handle_add,
+    "list": handle_list,
 }
 
 

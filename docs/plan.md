@@ -310,8 +310,9 @@ backup                                       # 보너스 1
 | 14 | `category add` / `list` + 기본 카테고리 시딩 | `services.py`, `cli.handle_category` |
 | 15 | `category remove` (차단 / `--replace-with` 치환) | `resolve_category`, `remove_category` |
 | 16 | `add` (대화형 거래 입력) | `add_transaction`, `cli.handle_add` |
+| 17 | `list --limit` (최근 입력순 스트리밍) | `recent_transactions`, `cli.handle_list` |
 
-여기까지로 **저장소·검증 계층이 완성**되고 **`category` 전체와 `add`가 동작**한다. 미션 요구 중
+여기까지로 **저장소·검증 계층이 완성**되고 **`category` 전체, `add`, `list`가 동작**한다. 미션 요구 중
 스트리밍(5·7번), 원자성(6번), dataclass 모델(2번), 3파일 분리(3번), 모듈화(14번),
 데코레이터(12번), 종료 코드(13번)가 충족된다.
 
@@ -323,7 +324,6 @@ backup                                       # 보너스 1
 
 | # | 작업 | 왜 이 순서인가 | 검증 |
 | --- | --- | --- | --- |
-| 17 | `list --limit` | `stream_reversed` 재사용 | 최신순, 기본값 동작 |
 | 18 | `search` (기간/카테고리/타입/키워드/태그) | 필터 제너레이터 체인 | 조건 교차 케이스 |
 | 19 | `delete --id` | `replace_all` 재사용 | 없는 id → `[오류]` + exit 1 |
 | 20 | `update --id` (옵션 기반) | delete와 같은 경로 | 없는 id 처리, 필드별 재검증 |

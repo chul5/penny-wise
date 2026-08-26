@@ -10,6 +10,8 @@ CLI를 거치지 않고 이 함수들만 호출해도 앱의 규칙을 그대로
 from __future__ import annotations
 
 from dataclasses import replace
+from itertools import islice
+from typing import Iterator
 
 from .errors import (CategoryInUseError, DuplicateCategoryError, UnknownCategoryError,
                      ValidationError)
@@ -133,3 +135,16 @@ def add_transaction(
     )
     stores.transactions.append(transaction)
     return transaction
+
+
+def recent_transactions(stores: Stores, limit: int) -> Iterator[Transaction]:
+    """최근 입력순으로 limit건을 흘려보낸다.
+
+    islice가 limit건을 채우면 제너레이터를 더 당기지 않으므로, 파일이 아무리
+    커도 뒤에서 필요한 만큼만 읽고 멈춘다. 리스트로 만들지 않고 Iterator를
+    그대로 돌려주는 이유가 이것이다 - 중간에 list()를 한 번 끼우면 스트리밍이
+    깨진다.
+    """
+    if limit <= 0:
+        raise ValidationError("--limit 은 1 이상이어야 합니다.", hint=f"입력값: {limit}")
+    return islice(stores.transactions.stream_reversed(), limit)
