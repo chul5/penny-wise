@@ -9,13 +9,14 @@ CLI를 거치지 않고 이 함수들만 호출해도 앱의 규칙을 그대로
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import replace
 from itertools import islice
 from typing import Iterator
 
 from .errors import (CategoryInUseError, DuplicateCategoryError, NotFoundError,
                      UnknownCategoryError, ValidationError)
-from .models import Budget, Transaction
+from .models import Budget, MonthlySummary, Transaction
 from .repositories import CategoryStore, Stores
 from .validators import (parse_amount, parse_category_name, parse_date, parse_month,
                          parse_tags, parse_type)
@@ -306,3 +307,43 @@ def get_budget(stores: Stores, month: str) -> Budget | None:
 def list_budgets(stores: Stores) -> Iterator[Budget]:
     """저장된 모든 월 예산을 월 순서대로. cli가 저장소를 직접 만지지 않게 한다."""
     return stores.budgets.stream()
+
+
+def summarize_month(stores: Stores, month: str, top: int) -> MonthlySummary:
+    """한 달 요약을 계산한다 (미션 8번).
+
+    파일을 한 번만 훑는다. 그 달 전체를 봐야 하므로 읽는 양은 줄일 수 없지만,
+    메모리에 쌓이는 건 카테고리 개수만큼이지 거래 건수만큼이 아니다.
+    10만 건짜리 파일도 Counter에는 카테고리 몇 개만 남는다.
+
+    월 비교는 date[:7]로 한다. 그래서 저장 시점에 날짜를 정규화해 두는 것이
+    중요하다 - '2024-1-5'가 그대로 저장되어 있으면 이 비교에서 빠진다.
+    """
+    if top <= 0:
+        raise ValidationError("--top 은 1 이상이어야 합니다.", hint=f"입력값: {top}")
+
+    normalized = parse_month(month)
+    count = 0
+    income = 0
+    expense = 0
+    per_category: Counter[str] = Counter()
+
+    for transaction in stores.transactions.stream():
+        if transaction.month != normalized:
+            continue
+        count += 1
+        if transaction.type == "income":
+            income += transaction.amount
+        else:
+            expense += transaction.amount
+            per_category[transaction.category] += transaction.amount
+
+    budget = stores.budgets.get(normalized)
+    return MonthlySummary(
+        month=normalized,
+        count=count,
+        total_income=income,
+        total_expense=expense,
+        top_expenses=tuple(per_category.most_common(top)),
+        budget=budget.amount if budget else None,
+    )

@@ -104,3 +104,42 @@ class Budget:
             return cls(month=str(raw["month"]), amount=int(raw["amount"]))
         except KeyError as exc:
             raise ValidationError(f"예산 파일에 필드가 없습니다: {exc.args[0]}") from exc
+
+
+@dataclass(frozen=True, slots=True)
+class MonthlySummary:
+    """한 달 요약. 저장되는 데이터가 아니라 계산 결과다.
+
+    dataclass로 고정해 두면 서비스가 무엇을 돌려주고 CLI가 무엇을 출력할지가
+    타입으로 드러난다. dict로 넘기면 키 이름 오타가 실행 시점까지 안 잡힌다.
+
+    계산으로 얻을 수 있는 값(잔액, 사용률)은 필드로 저장하지 않고 property로
+    둔다. 같은 사실을 두 군데 저장하면 어긋날 수 있다.
+    """
+
+    month: str  # YYYY-MM
+    count: int  # 그 달에 해당하는 거래 건수
+    total_income: int
+    total_expense: int
+    top_expenses: tuple[tuple[str, int], ...]  # (카테고리, 합계) 내림차순
+    budget: int | None = None  # 설정되지 않았으면 None
+
+    @property
+    def balance(self) -> int:
+        return self.total_income - self.total_expense
+
+    @property
+    def is_empty(self) -> bool:
+        """그 달 거래가 한 건도 없는지. 미션 8번의 "데이터 없음" 판단 기준."""
+        return self.count == 0
+
+    @property
+    def usage_rate(self) -> float | None:
+        """예산 대비 지출 비율(%). 예산이 없으면 None."""
+        if self.budget is None:
+            return None
+        return self.total_expense / self.budget * 100
+
+    @property
+    def over_budget(self) -> bool:
+        return self.budget is not None and self.total_expense > self.budget
