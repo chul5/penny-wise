@@ -13,8 +13,8 @@ from dataclasses import replace
 from itertools import islice
 from typing import Iterator
 
-from .errors import (CategoryInUseError, DuplicateCategoryError, UnknownCategoryError,
-                     ValidationError)
+from .errors import (CategoryInUseError, DuplicateCategoryError, NotFoundError,
+                     UnknownCategoryError, ValidationError)
 from .models import Transaction
 from .repositories import CategoryStore, Stores
 from .validators import parse_category_name, parse_date, parse_type
@@ -197,3 +197,28 @@ def search_transactions(
         return True
 
     return islice(filter(matches, stores.transactions.stream_reversed()), limit)
+
+
+def delete_transaction(stores: Stores, tx_id: str) -> Transaction:
+    """거래 한 건을 삭제하고 삭제된 거래를 돌려준다. 없으면 NotFoundError.
+
+    먼저 찾아보고 없으면 그 자리에서 실패한다. 곧바로 재작성부터 하면 없는
+    id를 지우라는 요청에도 파일을 통째로 다시 쓰게 되는데, 얻는 것 없이
+    위험만 지는 일이다.
+
+    id 비교는 대소문자를 무시한다. 목록에서 눈으로 읽어 옮겨 적는 값이라
+    tx-000012로 쳤다고 "없는 거래"라고 답하는 건 불친절하다.
+    """
+    target = tx_id.strip()
+    if not target:
+        raise ValidationError("--id 를 입력해야 합니다.", hint="예: --id TX-000012")
+
+    key = target.casefold()
+    removed = next((t for t in stores.transactions.stream() if t.id.casefold() == key), None)
+    if removed is None:
+        raise NotFoundError(f"id={target} 거래를 찾을 수 없습니다.")
+
+    stores.transactions.replace_all(
+        t for t in stores.transactions.stream() if t.id.casefold() != key
+    )
+    return removed

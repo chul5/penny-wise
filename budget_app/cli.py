@@ -20,8 +20,9 @@ from .decorators import handle_errors, print_error, report_error
 from .errors import BudgetAppError, ValidationError
 from .models import Transaction
 from .repositories import Stores, open_stores
-from .services import (add_category, add_transaction, list_categories, recent_transactions,
-                       remove_category, resolve_category, search_transactions)
+from .services import (add_category, add_transaction, delete_transaction, list_categories,
+                       recent_transactions, remove_category, resolve_category,
+                       search_transactions)
 from .validators import (parse_amount, parse_category_name, parse_date, parse_tags,
                          parse_type)
 
@@ -262,6 +263,14 @@ def handle_search(args: argparse.Namespace, stores: Stores) -> int:
     )
 
 
+@handle_errors
+def handle_delete(args: argparse.Namespace, stores: Stores) -> int:
+    """delete - id로 거래 한 건을 삭제한다 (미션 6번)."""
+    removed = delete_transaction(stores, args.tx_id)
+    print(f"[삭제 완료] id={removed.id}")
+    return 0
+
+
 # 명령 이름 -> 핸들러. 명령을 추가할 때 핸들러를 위에 정의하고 여기 한 줄을
 # 더한다. 선언과 값을 한 곳에 모아 두면 지금 무슨 명령이 동작하는지 이 표만
 # 보면 된다. (파이썬은 위에서 아래로 실행하므로 함수 이름을 쓰는 이 표는
@@ -271,6 +280,7 @@ HANDLERS: dict[str, Handler] = {
     "add": handle_add,
     "list": handle_list,
     "search": handle_search,
+    "delete": handle_delete,
 }
 
 
