@@ -328,10 +328,11 @@ backup                                       # 보너스 1
 | 22 | `summary --month --top` + 예산 사용률/초과 경고 | `MonthlySummary`, `summarize_month`, `cli.handle_summary` |
 | 23 | `export --out` (CSV, 조건 필수) | `CSV_FIELDS`, `export_transactions`, `cli.handle_export` |
 | 24 | `import --from` (부분 성공 + `--dry-run`) | `ImportResult`, `import_transactions`, `cli.handle_import` |
+| 25 | `README.md` | 실행법·저장 형식·명령 예시·CSV 스키마 |
 
 여기까지로 **저장소·검증 계층이 완성**되고 **열 개 명령 전부(`add` `list` `search` `summary` `budget` `category` `update` `delete` `export` `import`)가 동작**한다.
-미션 최종 결과물 10가지 중 **9가지**가 끝났다. 열 개 명령이 모두 동작한다.
-남은 필수 작업은 **README(10번)** 하나뿐이다.
+미션 최종 결과물 **10가지가 모두 끝났다.** 필수 요구사항은 전부 충족했고,
+남은 것은 보너스 과제뿐이다.
 
 CSV 줄바꿈은 `csv` 모듈 기본값인 CRLF다(RFC 4180 표준). `csv.DictReader`가
 CRLF/LF를 모두 읽으므로 왕복에는 영향이 없다. LF로 바꾸려면 writer에
@@ -345,9 +346,7 @@ CRLF/LF를 모두 읽으므로 왕복에는 영향이 없다. LF로 바꾸려면
 
 ### 남은 작업 (To do)
 
-| # | 작업 | 왜 이 순서인가 | 검증 |
-| --- | --- | --- | --- |
-| 25 | `README.md` | | 실행법/파일 위치/명령 예시/CSV 스키마 |
+없음. 미션이 요구한 필수 작업은 모두 끝났다.
 
 ### 보너스 (선택)
 
