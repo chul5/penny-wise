@@ -96,3 +96,15 @@ def log_execution_time(func):
 def process_transaction(tx):
     db.save(tx)  # 순수 비즈니스 로직만 남음
 ```
+## 5. argparse 전역 옵션 위치
+
+argparse는 인자를 왼쪽부터 훑다가 서브커맨드 이름(`list`)을 만나면 **그 뒤 전부를 그
+서브파서에게 넘기고 손을 뗀다.** 그래서 옵션은 등록한 파서 쪽에서만 인식된다.
+
+- `--data-dir`, `--verbose` → 최상위 파서에 등록 ⇒ **명령보다 앞**에만 올 수 있다
+- `--limit`, `--month` → 각 서브파서에 등록 ⇒ **명령 뒤**에 온다
+
+위치 규칙은 우리가 정한 약속이 아니라 argparse 구조의 결과다. `parents=[...]`로 모든
+서브파서에 전역 옵션을 복제하면 뒤에도 쓸 수 있지만, `--data-dir`이 앞뒤로 두 번 들어올
+때 어느 쪽이 이기는지를 우리가 정해야 해서 하지 않았다. (git도 같은 구조:
+`git --no-pager log` O, `git log --no-pager` X)
